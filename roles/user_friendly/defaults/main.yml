@@ -1,0 +1,15 @@
+---
+# defaults/main.yml for user_friendly role
+user_friendly_packages:
+  - htop
+  - curl
+  - git
+  - vim
+  - net-tools
+  - iotop
+  - tmux
+  - fzf
+  - neovim
+  - ripgrep
+  - zsh
+  - iperf3

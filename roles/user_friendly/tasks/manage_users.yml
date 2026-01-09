@@ -1,0 +1,22 @@
+---
+# 1. Ensure the user exists (Idempotent creation)
+- name: Ensure managed users exist
+  ansible.builtin.user:
+    name: "{{ item.username }}"
+    groups: "{{ item.groups | default(omit) }}"
+    shell: "{{ item.shell | default('/bin/bash') }}"
+    append: true # Don't remove existing groups (like video/input)
+    state: present
+  loop: "{{ managed_users }}"
+
+# 2. Key Management
+# This uses 'exclusive: false' by default (additive).
+# If you want strict enforcement (remove unknown keys), set exclusive: true.
+- name: Manage authorized keys for users
+  ansible.posix.authorized_key:
+    user: "{{ item.username }}"
+    key: "{{ item.authorized_keys | join('\n') }}"
+    state: present
+    exclusive: false
+  loop: "{{ managed_users }}"
+  when: item.authorized_keys is defined

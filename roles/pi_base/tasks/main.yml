@@ -1,0 +1,49 @@
+---
+- name: "Update apt cache"
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+# Assumes that the NAS is present - we don't manage the Synology
+# using Ansible because oh gods
+- name: "Install base system packages that allows a Pi to behave"
+  ansible.builtin.apt:
+    name:
+      - unattended-upgrades
+      - log2ram               # Save the drives!
+      - watchdog
+    state: present
+
+- name: Ensure rpi-eeprom is installed for bootloader updates
+  ansible.builtin.apt:
+    name: rpi-eeprom
+    state: present
+
+- name: "Install rsync package"
+  ansible.builtin.apt:
+    name: rsync
+    state: present
+
+- name: "Create rsync module directories"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /etc/rsyncd.d
+    - /etc/rsyncd.secrets.d
+
+- name: "Deploy global rsync configuration"
+  ansible.builtin.template:
+    src: "rsyncd.conf.j2"
+    dest: /etc/rsyncd.conf
+    mode: '0644'
+  notify:
+    - Restart rsync service
+
+- name: "Ensure rsync service is started and enabled"
+  ansible.builtin.service:
+    name: "{{ rsync_service_name }}"
+    state: started
+    enabled: yes
+  when: rsync_service_name is defined and rsync_service_name != ""

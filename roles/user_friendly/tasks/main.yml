@@ -1,0 +1,22 @@
+---
+# tasks/main.yml for user_friendly
+
+- name: "Assert that the managed_users variable is defined and contains at least one user"
+  ansible.builtin.assert:
+    that:
+      - managed_users is defined
+      - managed_users | length > 0
+    fail_msg: "The 'managed_users' variable must be defined and contain at least one user for the user_friendly role."
+
+- name: "Include user management tasks"
+  ansible.builtin.include_tasks: manage_users.yml
+
+- name: "Install user-friendly packages"
+  ansible.builtin.apt:
+    name: "{{ user_friendly_packages }}"
+    state: present
+
+- name: "Set system timezone"
+  community.general.timezone:
+    name: "{{ timezone }}"
+  when: timezone is defined

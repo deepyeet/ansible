@@ -1,0 +1,25 @@
+---
+- name: "Ensure scripts directory exists"
+  ansible.builtin.file:
+    path: "/home/{{ansible_user}}/scripts"
+    state: directory
+    owner: "{{ansible_user}}"
+    group: "{{ansible_user}}"
+    mode: '0755'
+
+- name: "Deploy daily data backup script"
+  ansible.builtin.copy:
+    src: "daily-data-backup.sh"
+    dest: "/home/{{ansible_user}}/scripts/daily-data-backup.sh"
+    owner: "{{ansible_user}}"
+    group: "{{ansible_user}}"
+    mode: '0755'
+
+- name: "Schedule daily data backup"
+  ansible.builtin.cron:
+    name: "Daily data backup"
+    job: "bash '/home/{{ansible_user}}/scripts/daily-data-backup.sh' '{{ healthcheck_uuid_daily_data_backup }}' '{{ torrenter_data_mount }}' '{{ torrenter_backup_mount }}'"
+    minute: "0"
+    hour: "0"
+    user: "{{ansible_user}}"
+    state: present

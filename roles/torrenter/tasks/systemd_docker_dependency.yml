@@ -1,0 +1,34 @@
+---
+- name: Assemble list of required systemd-managed mounts
+  ansible.builtin.set_fact:
+    required_mounts: "{{
+      ([torrenter_data_mount] if torrenter_data_mount_is_systemd_managed | default(false) else []) +
+      ([torrenter_backup_mount] if torrenter_backup_mount_is_systemd_managed | default(false) else [])
+    }}"
+
+- name: Configure and immediately reload systemd for Docker dependencies
+  when: required_mounts | length > 0
+  block:
+    - name: Ensure Docker systemd drop-in directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/system/docker.service.d
+        state: directory
+        mode: '0755'
+
+    - name: Resolve systemd unit names for mount paths
+      ansible.builtin.command: "systemd-escape --path --suffix=mount {{ item }}"
+      register: resolved_mount_units
+      loop: "{{ required_mounts }}"
+      changed_when: false
+
+    - name: Create Docker dependency drop-in file
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/docker.service.d/torrenter-dep.conf
+        content: |
+          [Unit]
+          Requires={{ resolved_mount_units.results | map(attribute='stdout') | join(' ') }}
+          After={{ resolved_mount_units.results | map(attribute='stdout') | join(' ') }}
+        mode: '0644'
+      register: drop_in_file
+      notify:
+        - Restart docker service

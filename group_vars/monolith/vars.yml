@@ -1,0 +1,69 @@
+---
+secret_unix_name: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+          38633634396536353830633562323362376135663933366131376333383036313264363965663364
+          3766626665363538313938333331393065633835653533340a356131393565323834396234666564
+          62646563396436313338373561336465643132373734373337666639323165613564363463663531
+          6330613136363964630a363930366363383636356330633062313630346237306266373661636162
+          6666
+ansible_user: "{{secret_unix_name}}"
+docker_users:
+- "{{secret_unix_name}}"
+torrenter_data_mount: /mnt/expansion
+torrenter_backup_mount: /mnt/synology_canvio
+# --- Systemd Mount Dependencies ---
+# Boolean flags to control whether a mount is considered a systemd dependency
+torrenter_data_mount_is_systemd_managed: true
+torrenter_backup_mount_is_systemd_managed: true
+# --- Network Mounts (NFS/SMB) ---
+# A dictionary of all available network shares the torrenter might need.
+network_mounts_definitions:
+  synology_canvio:
+    path: /mnt/synology_canvio
+    src: 192.168.1.253:/volumeUSB2/usbshare
+    fstype: nfs
+    opts: defaults,noatime,bg
+
+# A list of keys from the above dictionary to actually mount for this group.
+network_mounts_enabled:
+  - synology_backup
+  - synology_canvio
+
+# --- Rsync Backup Target ---
+backup_target_rsync_module_name: "synology_target"
+backup_target_rsync_base_path: "/mnt/expansion/synology_vault"
+backup_target_rsync_comment: "Backup Target for Synology"
+backup_target_rsync_uid: "1000"
+backup_target_rsync_gid: "1000"
+backup_target_rsync_user: "synology"
+backup_target_rsync_allowed_hosts: "192.168.0.0/16"
+
+# --- User Friendly Role ---
+timezone: America/Los_Angeles
+
+managed_users:
+  - username: {{secret_unix_name}}
+    groups: "sudo,docker"
+    shell: /usr/bin/zsh
+    authorized_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICRWJy+U3pJCvn/nlzWaUBvEzSu8U6lj47z+NiaJLBiU"
+
+
+# --- NUT Client Configuration ---
+nut_mode: netclient
+nut_upsmon_extra: "MONITOR ups@192.168.1.253 1 monuser {{ nut_mon_password }} slave"
+nut_services:
+  - nut-monitor.service
+  - nut.target
+nut_ups: [] # Explicitly define no local UPS devices
+
+# --- Docker Daemon Configuration ---
+docker_daemon_options:
+  log-driver: "journald"
+
+# --- Tailscale Configuration ---
+tailscale_oauth_ephemeral: false
+tailscale_args: "--hostname raspberrypi"
+
+
+

@@ -1,0 +1,11 @@
+---
+- name: Restart transmission stack
+  community.docker.docker_compose_v2:
+    project_src: "/home/{{ansible_user}}/ansible_docker/transmission"
+    state: present
+
+- name: Restart docker service
+  ansible.builtin.service:
+    name: docker
+    state: restarted
+    daemon_reload: true

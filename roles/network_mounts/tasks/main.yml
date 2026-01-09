@@ -1,0 +1,17 @@
+---
+- name: Ensure mount points exist for network mounts
+  ansible.builtin.file:
+    path: "{{ network_mounts_definitions[item].path }}"
+    state: directory
+  loop: "{{ network_mounts_enabled }}"
+  when: network_mounts_enabled is defined
+
+- name: Mount selected network shares
+  ansible.posix.mount:
+    path: "{{ network_mounts_definitions[item].path }}"
+    src: "{{ network_mounts_definitions[item].src }}"
+    fstype: "{{ network_mounts_definitions[item].fstype }}"
+    opts: "{{ network_mounts_definitions[item].opts }}"
+    state: mounted
+  loop: "{{ network_mounts_enabled }}"
+  when: network_mounts_enabled is defined

@@ -1,0 +1,12 @@
+---
+all:
+  hosts:
+    pi4_2020:
+      ansible_host: 127.0.0.1
+      ansible_connection: local
+      physical_disks:
+        - { path: "/mnt/expansion", uuid: "1b89df4a-82a2-4548-ba96-41b04b6a47f8", fstype: "ext4", opts: "defaults,noatime" }
+  children:
+    monolith:
+      hosts:
+        pi4_2020: {}
