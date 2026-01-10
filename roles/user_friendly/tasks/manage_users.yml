@@ -91,4 +91,16 @@
   become_user: "{{ item.username }}"
   loop: "{{ managed_users }}"
 
-# TBD: Run stow
+- name: Stow dotfiles (Symlink all packages)
+  ansible.builtin.shell:
+    # "stow *" expands to "stow nvim zsh git ..."
+    # This tells Stow to treat subfolders as packages.
+    cmd: "stow *" 
+    chdir: "{{ item.dotfiles.dest | replace('~', '/home/' + item.username) }}"
+  become: true
+  become_user: "{{ item.username }}"
+  loop: "{{ managed_users }}"
+  when: item.dotfiles is defined
+  # Don't report "changed" unless it actually did something?
+  # Stow is messy with output, so we usually suppress change reporting for "cattle" runs.
+  changed_when: false
