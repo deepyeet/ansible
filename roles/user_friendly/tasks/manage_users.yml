@@ -1,4 +1,13 @@
 ---
+# 0. Dependencies
+
+- name: Install GNU Stow
+  ansible.builtin.apt:
+    name:
+      - stow
+      - python3-paramiko
+    state: present
+
 # 1. Ensure the user exists (Idempotent creation)
 - name: Ensure managed users exist
   ansible.builtin.user:
@@ -20,3 +29,78 @@
     exclusive: false
   loop: "{{ managed_users }}"
   when: item.authorized_keys is defined
+
+- name: Ensure .ssh directory exists
+  ansible.builtin.file:
+    path: "/home/{{ item.username }}/.ssh"
+    state: directory
+    mode: '0700'
+    owner: "{{ item.username }}"
+  loop: "{{ managed_users }}"
+
+- name: Configure SSH to use the Deploy Key for GitHub
+  community.general.ssh_config:
+    user: "{{ item.username }}"
+    host: "github.com"
+    hostname: "github.com"
+    identity_file: "/home/{{ item.username }}/.ssh/id_ed25519_deploy"
+    identities_only: true
+    state: present
+  loop: "{{ managed_users }}"
+  become: true
+  become_user: "{{ item.username }}"
+
+- name: Configure General SSH Defaults (Host *)
+  community.general.ssh_config:
+    user: "{{ item.username }}"
+    host: "*"
+    forward_agent: true
+    add_keys_to_agent: true
+    
+    state: present
+  loop: "{{ managed_users }}"
+  become: true
+  become_user: "{{ item.username }}"
+
+- name: Trust GitHub's SSH fingerprint automatically
+  ansible.builtin.known_hosts:
+    name: "github.com"
+    key: "{{ lookup('pipe', 'ssh-keyscan -t ed25519 github.com') }}"
+    path: "/home/{{ item.username }}/.ssh/known_hosts"
+    state: present
+  loop: "{{ managed_users }}"
+  become: true
+  become_user: "{{ item.username }}"
+
+- name: Install Fleet Deploy Key
+  ansible.builtin.copy:
+    content: "{{ vault_git_deploy_key }}"
+    dest: "/home/{{ item.username }}/.ssh/id_ed25519_deploy"
+    mode: '0600' # CRITICAL: SSH ignores keys with open permissions
+    owner: "{{ item.username }}"
+  loop: "{{ managed_users }}"
+
+# 3. Git and dotfiles
+- name: Configure Git to use Windows SSH.exe (WSL Only)
+  community.general.git_config:
+    scope: global
+    name: core.sshCommand
+    value: "ssh.exe"
+  become: true
+  become_user: "{{ item.username }}"
+  loop: "{{ managed_users }}"
+  when: use_windows_ssh_for_git | default(false)
+
+- name: Checkout Dotfiles (Using the specific key)
+  ansible.builtin.git:
+    repo: "{{ item.dotfiles.repo }}"
+    dest: "{{ item.dotfiles.dest }}"
+    version: main
+    key_file: "/home/{{ item.username }}/.ssh/id_ed25519_deploy"
+    accept_hostkey: true
+    update: true
+  become: true
+  become_user: "{{ item.username }}"
+  loop: "{{ managed_users }}"
+
+# TBD: Run stow

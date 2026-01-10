@@ -1,15 +1,6 @@
 ---
 - name: Media Stealer
   hosts: monolith
-  pre_tasks:
-    - name: Detect rsync service name
-      ansible.builtin.shell: "systemctl list-units --type=service --plain --no-legend | grep -o 'rsync[^.]*.service' | head -n 1 || true"
-      register: rsync_service_file
-      changed_when: false
-      check_mode: no
-    - name: Set rsync service name fact
-      ansible.builtin.set_fact:
-        rsync_service_name: "{{ rsync_service_file.stdout | replace('.service', '') }}"
   roles:
     - role: pi_base
     - role: ntd.nut
@@ -20,3 +11,8 @@
     - role: torrenter
     - role: cloudflared
     - role: artis3n.tailscale.machine
+
+- name: Dev Environment
+  hosts: dev
+  roles:
+  - role: user_friendly

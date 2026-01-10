@@ -1,0 +1,12 @@
+# --- User Friendly Role ---
+timezone: America/Los_Angeles
+
+ansible_user: "{{secret_unix_name}}"
+managed_users:
+  - username: "{{secret_unix_name}}"
+    groups: "sudo"
+    shell: /usr/bin/zsh
+    dotfiles:
+      repo: "git@github.com:deepyeet/dotfiles.git"
+      dest: "~/.dotfiles"
+      version: "main"
