@@ -12,7 +12,8 @@
     - role: cloudflared
     - role: artis3n.tailscale.machine
 
-- name: Dev Environment
-  hosts: dev
+- name: WSL Dev Environment
+  hosts: wsl
   roles:
+  - role: wsl_integration
   - role: user_friendly

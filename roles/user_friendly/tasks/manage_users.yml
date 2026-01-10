@@ -80,24 +80,12 @@
     owner: "{{ item.username }}"
   loop: "{{ managed_users }}"
 
-# 3. Git and dotfiles
-- name: Configure Git to use Windows SSH.exe (WSL Only)
-  community.general.git_config:
-    scope: global
-    name: core.sshCommand
-    value: "ssh.exe"
-  become: true
-  become_user: "{{ item.username }}"
-  loop: "{{ managed_users }}"
-  when: use_windows_ssh_for_git | default(false)
-
 - name: Checkout Dotfiles (Using the specific key)
   ansible.builtin.git:
     repo: "{{ item.dotfiles.repo }}"
     dest: "{{ item.dotfiles.dest }}"
     version: main
     key_file: "/home/{{ item.username }}/.ssh/id_ed25519_deploy"
-    accept_hostkey: true
     update: true
   become: true
   become_user: "{{ item.username }}"

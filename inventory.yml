@@ -13,6 +13,6 @@ all:
     monolith:
       hosts:
         pi4_2020: {}
-    dev:
+    wsl:
       hosts:
         jujupc: {}

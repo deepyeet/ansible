@@ -18,7 +18,6 @@ network_mounts_definitions:
 
 # A list of keys from the above dictionary to actually mount for this group.
 network_mounts_enabled:
-  - synology_backup
   - synology_canvio
 
 # --- Rsync Backup Target ---
