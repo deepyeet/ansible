@@ -1,0 +1,17 @@
+---
+- name: Ensure mount points exist for physical disks
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+  loop: "{{ physical_disks }}"
+  when: physical_disks is defined
+
+- name: Mount physical disks by UUID
+  ansible.posix.mount:
+    path: "{{ item.path }}"
+    src: "UUID={{ item.uuid }}"
+    fstype: "{{ item.fstype }}"
+    opts: "{{ item.opts }}"
+    state: mounted
+  loop: "{{ physical_disks }}"
+  when: physical_disks is defined

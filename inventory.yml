@@ -1,0 +1,18 @@
+---
+all:
+  hosts:
+    pi4_2020:
+      ansible_host: raspberrypi
+      ansible_connection: ssh
+      physical_disks:
+        - { path: "/mnt/expansion", uuid: "1b89df4a-82a2-4548-ba96-41b04b6a47f8", fstype: "ext4", opts: "defaults,noatime" }
+    jujupc:
+      ansible_host: juju-pc
+      ansible_connection: local
+  children:
+    monolith:
+      hosts:
+        pi4_2020: {}
+    wsl:
+      hosts:
+        jujupc: {}

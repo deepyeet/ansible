@@ -1,0 +1,7 @@
+---
+# handlers/main.yml for neovim role
+
+- name: "Update apt cache"
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600 # Keep cache for 1 hour

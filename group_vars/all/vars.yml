@@ -1,0 +1,20 @@
+# --- User Friendly Role ---
+timezone: America/Los_Angeles
+
+ansible_user: "{{ secret_unix_name }}"
+managed_users:
+  - username: "{{ secret_unix_name }}"
+    groups: "sudo"
+    shell: /usr/bin/zsh
+    dotfiles:
+      repo: "git@github.com:deepyeet/dotfiles.git"
+      dest: "~/.dotfiles"
+      version: "main"
+      # This key is used to clone the dotfiles repository.
+      # It should be a private key with read access to the repo.
+      # Store the actual key in the corresponding vault file.
+      deploy_key: "{{ vault_git_deploy_key }}"
+
+
+nodejs_version: "24.x"
+nodejs_install_npm_user: root

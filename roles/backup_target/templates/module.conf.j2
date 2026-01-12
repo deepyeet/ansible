@@ -1,0 +1,11 @@
+# Managed by Ansible
+[{{ backup_target_rsync_module_name }}]
+    path = {{ backup_target_rsync_base_path }}
+    comment = {{ backup_target_rsync_comment }}
+    read only = no
+    list = yes
+    uid = {{ backup_target_rsync_uid }}
+    gid = {{ backup_target_rsync_gid }}
+    auth users = {{ backup_target_rsync_user }}
+    secrets file = /etc/rsyncd.secrets.d/{{ backup_target_rsync_module_name }}.secrets
+    hosts allow = {{ backup_target_rsync_allowed_hosts }}

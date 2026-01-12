@@ -1,0 +1,111 @@
+---
+# tasks/main.yml for dotfiles role
+
+- name: "Assert that the managed_users variable is defined"
+  ansible.builtin.assert:
+    that:
+      - managed_users is defined
+      - managed_users | length > 0
+    fail_msg: "The 'managed_users' variable must be defined and contain at least one user."
+
+# This role runs entirely with user-level privileges,
+# becoming the user for each task.
+
+- name: Ensure packages exist for dotfiles
+  ansible.builtin.apt:
+    name:
+      - git
+      - stow
+      - python3-paramiko
+    state: present
+  # This needs to run with root, so it's an exception.
+  become: true
+
+- name: Ensure .ssh directory exists
+  ansible.builtin.file:
+    path: "/home/{{ item.username }}/.ssh"
+    state: directory
+    mode: '0700'
+  loop: "{{ managed_users }}"
+  become: true
+  become_user: "{{ item.username }}"
+  when: item.dotfiles.deploy_key is defined
+
+- name: Configure SSH to use the Deploy Key for GitHub
+  community.general.ssh_config:
+    user: "{{ item.username }}"
+    host: "github.com"
+    hostname: "github.com"
+    identity_file: "/home/{{ item.username }}/.ssh/id_ed25519_deploy"
+    state: present
+  loop: "{{ managed_users }}"
+  become: true
+  become_user: "{{ item.username }}"
+  when: item.dotfiles.deploy_key is defined
+  no_log: true
+
+- name: Configure General SSH Defaults (Host *)
+  ansible.builtin.blockinfile:
+    path: "/home/{{ item.username }}/.ssh/config"
+    block: |
+      Host *
+        ForwardAgent yes
+        AddKeysToAgent yes
+    marker: "# {mark} ANSIBLE MANAGED BLOCK for Host * for user {{ item.username }}"
+    create: true
+    mode: '0600'
+  loop: "{{ managed_users }}"
+  become: true
+  become_user: "{{ item.username }}"
+
+- name: Trust GitHub's SSH fingerprint automatically
+  ansible.builtin.known_hosts:
+    name: "github.com"
+    key: "{{ lookup('pipe', 'ssh-keyscan -t ed25519 github.com') }}"
+    path: "/home/{{ item.username }}/.ssh/known_hosts"
+    state: present
+  loop: "{{ managed_users }}"
+  become: true
+  become_user: "{{ item.username }}"
+  when: item.dotfiles.deploy_key is defined
+
+- name: Install Dotfiles Deploy Key
+  ansible.builtin.copy:
+    content: "{{ item.dotfiles.deploy_key }}"
+    dest: "/home/{{ item.username }}/.ssh/id_ed25519_deploy"
+    mode: '0600'
+  loop: "{{ managed_users }}"
+  become: true
+  become_user: "{{ item.username }}"
+  when: item.dotfiles.deploy_key is defined
+  no_log: true # Do not log the key content
+
+- name: Checkout Dotfiles (Using the specific key)
+  ansible.builtin.git:
+    repo: "{{ item.dotfiles.repo }}"
+    dest: "{{ item.dotfiles.dest }}"
+    version: "{{ item.dotfiles.version | default('main') }}"
+    key_file: "/home/{{ item.username }}/.ssh/id_ed25519_deploy"
+    update: true
+  become: true
+  become_user: "{{ item.username }}"
+  loop: "{{ managed_users }}"
+  when: item.dotfiles is defined and item.dotfiles.repo is defined and item.dotfiles.deploy_key is defined
+  no_log: true
+
+- name: Get user system information
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ item.username }}"
+  loop: "{{ managed_users }}"
+
+- name: Stow dotfiles (Symlink all packages)
+  ansible.builtin.shell:
+    cmd: "stow -v */"
+    chdir: "{{ getent_passwd[item.username][4] }}/{{ item.dotfiles.dest | basename }}"
+  become: true
+  become_user: "{{ item.username }}"
+  loop: "{{ managed_users }}"
+  register: stow_out
+  changed_when: "'LINK' in stow_out.stderr"
+  when: item.dotfiles is defined and item.dotfiles.repo is defined

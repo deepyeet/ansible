@@ -1,0 +1,4 @@
+dependencies:
+  - role: geerlingguy.docker
+    vars:
+      docker_install_compose_plugin: true

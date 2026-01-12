@@ -1,0 +1,25 @@
+---
+# tasks/main.yml for backup_target
+
+- name: "Assert that all required variables are defined"
+  ansible.builtin.assert:
+    that:
+      - backup_target_rsync_base_path is defined
+      - backup_target_rsync_user is defined
+      - backup_target_rsync_password is defined
+      - backup_target_rsync_module_name is defined
+      - backup_target_rsync_comment is defined
+      - backup_target_rsync_uid is defined
+      - backup_target_rsync_gid is defined
+      - backup_target_rsync_allowed_hosts is defined
+      - rsync_service_name is defined and rsync_service_name != ""
+    fail_msg: "One or more required variables for the backup_target role are not defined. Please check the role's defaults and your group/host vars."
+
+- name: "Include systemd dependency tasks"
+  ansible.builtin.include_tasks: systemd_dependency.yml
+
+- name: "Include rsync configuration tasks"
+  ansible.builtin.include_tasks: configure.yml
+
+- name: "Flush handlers to ensure rsync is restarted with new config"
+  ansible.builtin.meta: flush_handlers

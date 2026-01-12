@@ -1,0 +1,19 @@
+---
+- name: "Get systemd unit name for backup mount path"
+  ansible.builtin.command: "systemd-escape --path --suffix=mount {{ backup_target_rsync_base_path }}"
+  register: escaped_mount_unit
+  changed_when: false
+  check_mode: no
+  when: backup_target_rsync_base_path is defined
+
+- name: "Create systemd override for {{ rsync_service_name }} service"
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ rsync_service_name }}.service.d/mount-dep.conf"
+    content: |
+      [Unit]
+      Requires={{ escaped_mount_unit.stdout }}
+      After={{ escaped_mount_unit.stdout }}
+    mode: '0644'
+  notify:
+    - Restart rsync service
+  when: rsync_service_name is defined and rsync_service_name != ""

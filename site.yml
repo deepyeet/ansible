@@ -1,0 +1,24 @@
+---
+- name: Media Stealer
+  hosts: monolith
+  roles:
+    - role: pi_base
+    - role: ntd.nut
+    - role: user_friendly
+    - role: users
+    - role: dotfiles
+    - role: physical_disks
+
+    - role: backup_target
+    - role: torrenter
+    - role: cloudflared
+    - role: artis3n.tailscale.machine
+
+- name: WSL Dev Environment
+  hosts: wsl
+  roles:
+  - role: wsl_integration
+  - role: user_friendly
+  - role: users
+  - role: dotfiles
+

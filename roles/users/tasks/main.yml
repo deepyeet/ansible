@@ -1,0 +1,30 @@
+--- # tasks/main.yml for users role
+
+- name: "Assert that the managed_users variable is defined"
+  ansible.builtin.assert:
+    that:
+      - managed_users is defined
+      - managed_users | length > 0
+    fail_msg: "The 'managed_users' variable must be defined and contain at least one user."
+
+- name: Ensure managed users exist
+  ansible.builtin.user:
+    name: "{{ item.username }}"
+    groups: "{{ item.groups | default(omit) }}"
+    shell: "{{ item.shell | default('/bin/bash') }}"
+    append: true # Don't remove existing groups (like video/input)
+    state: present
+  loop: "{{ managed_users }}"
+
+- name: Manage authorized keys for users
+  ansible.posix.authorized_key:
+    user: "{{ item.username }}"
+    key: "{{ item.authorized_keys | join('\n') }}"
+    state: present
+    exclusive: false
+  loop: "{{ managed_users }}"
+  when: item.authorized_keys is defined
+  no_log: true
+
+
+
