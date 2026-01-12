@@ -1,0 +1,99 @@
+---
+- name: "Ensure target directory exists for transmission stack"
+  ansible.builtin.file:
+    path: "/home/{{ansible_user}}/ansible_docker/transmission"
+    state: directory
+    owner: "{{ansible_user}}"
+    group: "{{ansible_user}}"
+    mode: '0755'
+
+- name: "Copy static docker file: backup"
+  ansible.builtin.copy:
+    src: "files/backup/"
+    dest: "/home/{{ansible_user}}/ansible_docker/transmission/backup/"
+    owner: "{{ansible_user}}"
+    group: "{{ansible_user}}"
+    mode: '0755'
+    remote_src: no # Copy from controller to target
+  register: backup_copy_result
+
+- name: "Copy static docker file: gluetun"
+  ansible.builtin.copy:
+    src: "files/gluetun/"
+    dest: "/home/{{ansible_user}}/ansible_docker/transmission/gluetun/"
+    owner: "{{ansible_user}}"
+    group: "{{ansible_user}}"
+    mode: '0755'
+    remote_src: no
+  register: gluetun_copy_result
+
+- name: "Copy static docker file: mam-updater"
+  ansible.builtin.copy:
+    src: "files/mam-updater/"
+    dest: "/home/{{ansible_user}}/ansible_docker/transmission/mam-updater/"
+    owner: "{{ansible_user}}"
+    group: "{{ansible_user}}"
+    mode: '0755'
+    remote_src: no
+  register: mam_updater_copy_result
+
+- name: "Copy static docker file: ptp-archiver"
+  ansible.builtin.copy:
+    src: "files/ptp-archiver/"
+    dest: "/home/{{ansible_user}}/ansible_docker/transmission/ptp-archiver/"
+    owner: "{{ansible_user}}"
+    group: "{{ansible_user}}"
+    mode: '0755'
+    remote_src: no
+  register: ptp_archiver_copy_result
+
+- name: "Copy static docker file: transmission-healthcheck"
+  ansible.builtin.copy:
+    src: "files/transmission-healthcheck/"
+    dest: "/home/{{ansible_user}}/ansible_docker/transmission/transmission-healthcheck/"
+    owner: "{{ansible_user}}"
+    group: "{{ansible_user}}"
+    mode: '0755'
+    remote_src: no
+  register: transmission_healthcheck_copy_result
+
+- name: "Copy static docker file: GEMINI.md"
+  ansible.builtin.copy:
+    src: "files/GEMINI.md"
+    dest: "/home/{{ansible_user}}/ansible_docker/transmission/GEMINI.md"
+    owner: "{{ansible_user}}"
+    group: "{{ansible_user}}"
+    mode: '0644' # Assuming it's a regular file
+    remote_src: no
+  register: gemini_md_copy_result
+
+# This task will aggregate the 'changed' status of all copy tasks
+- name: "Set fact if static docker files changed"
+  ansible.builtin.set_fact:
+    static_docker_files_changed: "{{ backup_copy_result.changed or gluetun_copy_result.changed or mam_updater_copy_result.changed or ptp_archiver_copy_result.changed or transmission_healthcheck_copy_result.changed or gemini_md_copy_result.changed }}"
+
+- name: "Template compose.yaml from j2"
+  ansible.builtin.template:
+    src: "compose.yaml.j2"
+    dest: "/home/{{ansible_user}}/ansible_docker/transmission/compose.yaml"
+    owner: "{{ansible_user}}"
+    group: "{{ansible_user}}"
+    mode: '0644'
+  register: docker_compose_template
+
+- name: "Create .env file from template"
+  ansible.builtin.template:
+    src: "env.j2"
+    dest: "/home/{{ansible_user}}/ansible_docker/transmission/.env"
+    owner: "{{ansible_user}}"
+    group: "{{ansible_user}}"
+    mode: '0600' # Secrets file should not be world-readable
+  no_log: true
+  register: docker_env_template
+
+- name: "Deploy the transmission docker stack"
+  community.docker.docker_compose_v2:
+    project_src: "/home/{{ansible_user}}/ansible_docker/transmission"
+    state: present
+    build: "{{ 'always' if (static_docker_files_changed or docker_compose_template.changed or docker_env_template.changed) else 'policy' }}" # Conditionally build images
+    # No rebuild: true is needed here, build: always handles it.

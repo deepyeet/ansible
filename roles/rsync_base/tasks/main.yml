@@ -1,0 +1,32 @@
+---
+# tasks/main.yml for rsync_base
+# This role sets up the basic rsync daemon platform.
+
+- name: "Install rsync package"
+  ansible.builtin.apt:
+    name: rsync
+    state: present
+
+- name: "Create rsync module directories"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /etc/rsyncd.d
+    - /etc/rsyncd.secrets.d
+
+- name: "Deploy global rsync configuration"
+  ansible.builtin.template:
+    src: "rsyncd.conf.j2"
+    dest: /etc/rsyncd.conf
+    mode: '0644'
+  notify:
+    - Restart rsync service
+
+- name: "Ensure rsync service is started and enabled"
+  ansible.builtin.service:
+    name: "{{ rsync_service_name }}"
+    state: started
+    enabled: yes
+  when: rsync_service_name is defined and rsync_service_name != ""

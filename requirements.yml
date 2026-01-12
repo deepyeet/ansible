@@ -1,0 +1,10 @@
+---
+roles:
+  - name: geerlingguy.docker
+    version: 7.9.0
+  - name: ntd.nut
+    version: 1.7.1
+  - name: geerlingguy.nodejs
+    version: 7.1.0
+collections:
+  - name: artis3n.tailscale

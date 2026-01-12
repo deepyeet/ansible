@@ -1,0 +1,9 @@
+---
+- name: "Schedule daily data backup"
+  ansible.builtin.cron:
+    name: "Daily data backup"
+    job: "docker compose -f /home/{{ansible_user}}/ansible_docker/transmission/compose.yaml --profile backup run --rm backup"
+    minute: "0"
+    hour: "0"
+    user: "{{ansible_user}}"
+    state: present

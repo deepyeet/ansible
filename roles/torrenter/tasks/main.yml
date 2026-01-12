@@ -1,0 +1,17 @@
+---
+- name: "Update apt cache"
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600 # Update if cache is older than 1 hour
+
+- name: Configure systemd dependencies for Docker service
+  ansible.builtin.include_tasks: systemd_docker_dependency.yml
+
+- name: Force handlers to run to restart Docker if needed
+  meta: flush_handlers
+
+- name: Deploy and configure Docker stack
+  ansible.builtin.include_tasks: docker_stack.yml
+
+- name: Deploy and configure cron jobs
+  ansible.builtin.include_tasks: cron_jobs.yml

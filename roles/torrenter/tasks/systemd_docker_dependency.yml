@@ -1,0 +1,30 @@
+---
+- name: "Assert that torrenter_data_host_path is defined"
+  ansible.builtin.assert:
+    that:
+      - torrenter_data_host_path is defined
+      - torrenter_data_host_path != ""
+    fail_msg: "The 'torrenter_data_host_path' variable must be defined and not empty for systemd Docker dependencies."
+
+- name: Ensure Docker systemd drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/systemd/system/docker.service.d
+    state: directory
+    mode: '0755'
+
+- name: Resolve systemd unit name for data mount path
+  ansible.builtin.command: "systemd-escape --path --suffix=mount {{ torrenter_data_host_path }}"
+  register: resolved_data_mount_unit
+  changed_when: false
+
+- name: Create Docker dependency drop-in file
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/docker.service.d/torrenter-dep.conf
+    content: |
+      [Unit]
+      Requires={{ resolved_data_mount_unit.stdout }}
+      After={{ resolved_data_mount_unit.stdout }}
+    mode: '0644'
+  register: drop_in_file
+  notify:
+    - Restart docker service

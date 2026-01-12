@@ -1,0 +1,18 @@
+---
+- name: "Deploy rsync module secrets"
+  ansible.builtin.template:
+    src: "module.secrets.j2"
+    dest: "/etc/rsyncd.secrets.d/{{ backup_target_rsync_module_name }}.secrets"
+    owner: root
+    group: root
+    mode: '0600'
+  notify:
+    - Restart rsync service
+
+- name: "Deploy rsync module configuration"
+  ansible.builtin.template:
+    src: "module.conf.j2"
+    dest: "/etc/rsyncd.d/{{ backup_target_rsync_module_name }}.conf"
+    mode: '0644'
+  notify:
+    - Restart rsync service

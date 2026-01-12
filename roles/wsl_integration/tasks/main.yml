@@ -1,0 +1,29 @@
+---
+- name: Install Bridge Dependencies
+  ansible.builtin.apt:
+    name: 
+      - socat
+      - unzip
+    state: present
+  become: true
+
+- name: Create local bin directory
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/.local/bin"
+    state: directory
+    mode: '0755'
+
+- name: Download npiperelay (Fixed URL)
+  ansible.builtin.unarchive:
+    src: https://github.com/jstarks/npiperelay/releases/download/v0.1.0/npiperelay_windows_amd64.zip
+    dest: "/home/{{ ansible_user }}/.local/bin"
+    remote_src: true
+    include: 
+      - npiperelay.exe
+    mode: '0755'
+
+- name: Deploy SSH Agent Relay Script
+  ansible.builtin.copy:
+    src: wsl-ssh-agent-relay
+    dest: "/home/{{ ansible_user }}/.local/bin/wsl-ssh-agent-relay"
+    mode: '0755'

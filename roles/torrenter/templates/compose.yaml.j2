@@ -1,0 +1,154 @@
+volumes:
+{% for name, details in torrenter_docker_volumes.items() %}
+  {{ name }}:
+    driver: {{ details.driver }}
+    driver_opts:
+    {% for key, value in details.driver_opts.items() %}
+      {{ key }}: "{{ value }}"
+    {% endfor %}
+{% endfor %}
+
+services:
+  gluetun:
+    image: qmcgaw/gluetun
+    container_name: gluetun
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - "9091:9091"
+      - "8000:8000"
+    environment:
+      - HTTP_CONTROL_SERVER_ADDRESS=:8000
+      - HTTP_CONTROL_SERVER_AUTH_DEFAULT_ROLE='{"auth":"basic","username":"${GLUETUN_USER}","password":"${GLUETUN_PASS}"}'
+      - VPN_SERVICE_PROVIDER=protonvpn
+      - VPN_TYPE=wireguard
+      - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
+      - SERVER_COUNTRIES=United States
+      - SERVER_CITIES=Seattle,Los Angeles,San Jose
+      - VPN_PORT_FORWARDING=on
+      - VPN_PORT_FORWARDING_UP_COMMAND=/gluetun/update-port.sh {{ '{{PORT}}' }}
+      - PORT_FORWARD_ONLY=on
+      - TR_HOST=localhost
+      - TR_PORT=9091
+      - TR_USER=${TR_USER}
+      - TR_PASS=${TR_PASS}
+      - BLOCK_MALICIOUS=off
+      - TZ=America/Los_Angeles
+      - DOT=off
+      - DNS_ADDRESS=10.2.0.1
+    volumes:
+      - ./gluetun/update-port.sh:/gluetun/update-port.sh
+      - /lib/modules:/lib/modules:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "/gluetun-entrypoint healthcheck && [ -s /tmp/gluetun/forwarded_port ] || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  transmission:
+    image: lscr.io/linuxserver/transmission:4.0.5
+    container_name: transmission
+    network_mode: service:gluetun
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - USER=${TR_USER}
+      - PASS=${TR_PASS}
+      - TZ=America/Los_Angeles
+      - TRANSMISSION_PEER_LIMIT_GLOBAL=1500
+      - TRANSMISSION_PEER_LIMIT_PER_TORRENT=200
+    volumes:
+      - {{ torrenter_data_host_path }}/transmission/config:/config
+      - {{ torrenter_data_host_path }}/transmission/downloads:/downloads
+      - {{ torrenter_data_host_path }}/transmission/watch:/watch
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "transmission-remote localhost:9091 -n '${TR_USER}:${TR_PASS}' -si | grep -q 'Daemon version'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  mam-updater:
+    build:
+      context: ./mam-updater
+      dockerfile: Dockerfile
+    container_name: mam-updater
+    network_mode: service:gluetun
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      - MAM_ID=${MAM_ID}
+      - MAM_INTERVAL_NORMAL=60
+      - MAM_INTERVAL_ERROR=60
+      - MAM_INTERVAL_RATELIMIT=900
+      - TZ=America/Los_Angeles
+      - HC_URL=${HEALTHCHECK_HC_MAM_UPDATER}
+    volumes:
+      - ./mam-updater/data:/data
+    restart: unless-stopped
+
+  ptp-archiver:
+    build:
+      context: ./ptp-archiver
+    container_name: ptp-archiver
+    network_mode: service:gluetun
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      - PTP_USER=${PTP_USER}
+      - PTP_KEY=${PTP_KEY}
+      - PTP_CONTAINERS="tank:200G,supertank:500G,megatank:1T"
+      - TZ=America/Los_Angeles
+      - HC_URL=${HEALTHCHECK_HC_PTP_ARCHIVER}
+    user: "1000:1000"
+    volumes:
+      - {{ torrenter_data_host_path }}/transmission/watch:/watch
+    restart: unless-stopped
+
+  transmission-healthcheck:
+    build:
+      context: ./transmission-healthcheck
+    container_name: transmission-healthcheck
+    network_mode: service:gluetun
+    depends_on:
+      gluetun:
+        condition: service_healthy
+      transmission:
+        condition: service_healthy
+    environment:
+      - TR_HOST=localhost
+      - TR_PORT=9091
+      - TR_USER=${TR_USER}
+      - TR_PASS=${TR_PASS}
+      - GLUETUN_HOST=localhost
+      - GLUETUN_PORT=8000
+      - GLUETUN_USER=${GLUETUN_USER}
+      - GLUETUN_PASS=${GLUETUN_PASS}
+      - HC_URL=${HEALTHCHECK_HC_TRANSMISSION}
+      - CHECK_INTERVAL_SECONDS=300
+    restart: unless-stopped
+
+  backup:
+    build:
+      context: ./backup
+      dockerfile: Dockerfile
+    container_name: torrenter-backup
+    command: ["{{ healthcheck_uuid_daily_data_backup }}", "/data", "/backup_dest"]
+    volumes:
+      - {{ torrenter_data_host_path }}:/data:ro
+      - {{ torrenter_backup_docker_volume_name }}:/backup_dest
+    profiles: ["backup"]
+    restart: "no"
+

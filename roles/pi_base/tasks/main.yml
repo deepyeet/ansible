@@ -1,0 +1,22 @@
+---
+- name: "Update apt cache"
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+# Assumes that the NAS is present - we don't manage the Synology
+# using Ansible because oh gods
+- name: "Install base system packages that allows a Pi to behave"
+  ansible.builtin.apt:
+    name:
+      - unattended-upgrades
+      - log2ram               # Save the drives!
+      - watchdog
+    state: present
+
+- name: Ensure rpi-eeprom is installed for bootloader updates
+  ansible.builtin.apt:
+    name: rpi-eeprom
+    state: present
+
+

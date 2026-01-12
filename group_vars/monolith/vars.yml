@@ -1,0 +1,47 @@
+---
+docker_users:
+- "{{secret_unix_name}}"
+torrenter_data_host_path: /mnt/expansion
+torrenter_backup_docker_volume_name: synology_backup
+# --- Systemd Mount Dependencies ---
+# Boolean flags to control whether a mount is considered a systemd dependency
+
+
+# --- Torrenter Docker Volumes ---
+# Defines Docker named volumes, especially for NFS mounts managed by Docker.
+torrenter_docker_volumes:
+  synology_backup: # The name of the Docker volume
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=192.168.1.253,rw,noatime,bg"
+      device: ":/volumeUSB2/usbshare"
+
+# --- Rsync Backup Target ---
+rsync_service_name: "rsync"
+backup_target_rsync_module_name: "synology_target"
+backup_target_rsync_base_path: "/mnt/expansion/synology_vault"
+backup_target_rsync_comment: "Backup Target for Synology"
+backup_target_rsync_uid: "1000"
+backup_target_rsync_gid: "1000"
+backup_target_rsync_user: "synology"
+backup_target_rsync_allowed_hosts: "192.168.0.0/16"
+
+# --- NUT Client Configuration ---
+nut_mode: netclient
+nut_upsmon_extra: "MONITOR ups@192.168.1.253 1 monuser {{ nut_mon_password }} slave"
+nut_services:
+  - nut-monitor.service
+  - nut.target
+nut_ups: [] # Explicitly define no local UPS devices
+
+# --- Docker Daemon Configuration ---
+docker_daemon_options:
+  log-driver: "journald"
+
+# --- Tailscale Configuration ---
+tailscale_oauth_ephemeral: false
+tailscale_args: "--hostname raspberrypi"
+
+
+

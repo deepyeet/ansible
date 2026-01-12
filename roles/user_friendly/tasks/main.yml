@@ -1,0 +1,37 @@
+---
+# tasks/main.yml for user_friendly
+
+- name: "Install user-friendly apt packages"
+  ansible.builtin.apt:
+    name:
+      # General utils
+      - htop
+      - curl
+      - git
+      - vim
+      - net-tools
+      - iotop
+      - tmux
+      - fzf
+      - ripgrep
+      - zsh
+      - iperf3
+      # Build and debugging tools
+      - build-essential
+      - cmake
+      - gdb
+      - strace
+      - ltrace
+    state: present
+
+- name: Install Google Gemini CLI (Global)
+  community.general.npm:
+    name: "@google/gemini-cli"
+    global: true
+    state: latest
+  become: true
+
+- name: "Set system timezone"
+  community.general.timezone:
+    name: "{{ timezone }}"
+  when: timezone is defined

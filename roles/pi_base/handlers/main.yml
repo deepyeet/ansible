@@ -1,0 +1,6 @@
+---
+- name: Restart rsync service
+  ansible.builtin.service:
+    name: "{{ rsync_service_name }}"
+    state: restarted
+  when: rsync_service_name is defined and rsync_service_name != ""

@@ -1,0 +1,16 @@
+#!/bin/bash
+# ANSIBLE MANAGED: Do not edit manually
+
+RELAY_BIN="$HOME/.local/bin/npiperelay.exe"
+SOCK_PATH="$HOME/.ssh/agent.sock"
+PIPE_PATH="//./pipe/openssh-ssh-agent"
+
+# Ensure socket directory exists
+mkdir -p "$(dirname "$SOCK_PATH")"
+
+# Cleanup old socket
+rm -f "$SOCK_PATH"
+
+# Start the relay in the background using socat
+# We use setsid to detach it properly
+(setsid socat UNIX-LISTEN:"$SOCK_PATH",fork,mode=600 EXEC:"$RELAY_BIN -ei -s $PIPE_PATH",nofork &) >/dev/null 2>&1
