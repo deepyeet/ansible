@@ -16,6 +16,11 @@
       - ripgrep
       - zsh
       - iperf3
+      - eza
+      - fd-find
+      - ripgrep
+      - atuin
+      - zoxide
       # Build and debugging tools
       - build-essential
       - cmake

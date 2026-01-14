@@ -47,7 +47,7 @@ The architecture uses "Self-Contained" roles. Utility roles (like generic wrappe
 | Role | Type | Purpose & Rationale |
 | :--- | :--- | :--- |
 | **`pi_base`** | Local | **Platform Base Layer.** Handles OS-level "Day 1" setup: `log2ram`, `watchdog`, `nfs-common`, SSH hardening, and `apt` cache updates. **Depends on `rsync_base` to provide the core rsync daemon platform.** Ensures the hardware doesn't crash. |
-| **`user_friendly`** | Local | **System-wide Experience Layer.** Installs a static list of common, user-agnostic terminal packages (htop, curl), build tools (`build-essential`, `cmake`), and debug tools (`gdb`, `strace`). It also sets the system timezone and acts as a baseline for an interactive system. |
+| **`user_friendly`** | Local | **System-wide Experience Layer.** Installs a static list of common, user-agnostic terminal packages (htop, curl, eza, fd-find, ripgrep, atuin, zoxide), build tools (`build-essential`, `cmake`), and debug tools (`gdb`, `strace`). It also sets the system timezone and acts as a baseline for an interactive system. |
 | **`users`** | Local | **User Account Management.** Creates user accounts, sets up their `authorized_keys` for SSH access, and assigns groups. This role handles all user creation logic that requires root privileges. |
 | **`dotfiles`** | Local | **User-specific Configuration.** Clones a user's dotfiles repository from Git and uses `stow` to symlink them into place. This role runs with user-level privileges and uses a per-user deploy key for secure git cloning. |
 | **`neovim`** | Local | **Neovim Installer.** Handles installing the latest stable version of Neovim from its GitHub releases, including Python support packages. |
