@@ -18,8 +18,6 @@
       - iperf3
       - eza
       - fd-find
-      - ripgrep
-      - atuin
       - zoxide
       # Build and debugging tools
       - build-essential
@@ -28,6 +26,28 @@
       - strace
       - ltrace
     state: present
+
+- name: "Install Atuin from pre-compiled binary"
+  block:
+    - name: "Check if atuin is already installed"
+      ansible.builtin.stat:
+        path: "/usr/local/bin/atuin"
+      register: atuin_stat
+
+    - name: "Install atuin if not present"
+      when: not atuin_stat.stat.exists
+      block:
+        - name: "Set atuin architecture fact"
+          ansible.builtin.set_fact:
+            atuin_arch: "{{ 'aarch64' if ansible_architecture == 'aarch64' else 'x86_64' }}"
+
+        - name: "Download and unarchive Atuin binary"
+          ansible.builtin.unarchive:
+            src: "https://github.com/atuinsh/atuin/releases/latest/download/atuin-{{ atuin_arch }}-unknown-linux-gnu.tar.gz"
+            dest: "/usr/local/bin"
+            remote_src: yes
+            mode: '0755'
+      become: true
 
 - name: Install Google Gemini CLI (Global)
   community.general.npm:
