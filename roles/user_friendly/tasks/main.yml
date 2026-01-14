@@ -41,12 +41,26 @@
           ansible.builtin.set_fact:
             atuin_arch: "{{ 'aarch64' if ansible_architecture == 'aarch64' else 'x86_64' }}"
 
-        - name: "Download and unarchive Atuin binary"
+        - name: "Download and unarchive Atuin to a temporary directory"
           ansible.builtin.unarchive:
             src: "https://github.com/atuinsh/atuin/releases/latest/download/atuin-{{ atuin_arch }}-unknown-linux-gnu.tar.gz"
-            dest: "/usr/local/bin"
+            dest: /tmp/
             remote_src: yes
+          register: atuin_unarchive_result
+
+        - name: "Copy the atuin binary to the final destination"
+          ansible.builtin.copy:
+            src: "/tmp/atuin-{{ atuin_arch }}-unknown-linux-gnu/atuin"
+            dest: /usr/local/bin/atuin
             mode: '0755'
+            remote_src: yes
+          when: atuin_unarchive_result.changed
+
+        - name: "Clean up the temporary Atuin directory"
+          ansible.builtin.file:
+            path: "/tmp/atuin-{{ atuin_arch }}-unknown-linux-gnu"
+            state: absent
+          when: atuin_unarchive_result.changed
       become: true
 
 - name: Install Google Gemini CLI (Global)
