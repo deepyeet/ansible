@@ -5,7 +5,6 @@
     - role: pi_base
     - role: ntd.nut
     - role: users
-    - role: dotfiles
     - role: physical_disks
     - role: backup_target
     - role: torrenter
