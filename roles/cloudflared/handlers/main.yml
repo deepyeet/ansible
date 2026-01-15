@@ -1,5 +1,0 @@
----
-- name: Restart cloudflared stack
-  community.docker.docker_compose_v2:
-    project_src: "/home/{{ansible_user}}/ansible_docker/cloudflared"
-    state: present

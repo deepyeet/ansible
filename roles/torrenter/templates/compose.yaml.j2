@@ -109,7 +109,7 @@ services:
     environment:
       - PTP_USER=${PTP_USER}
       - PTP_KEY=${PTP_KEY}
-      - PTP_CONTAINERS="tank:200G,supertank:500G,megatank:1T"
+      - PTP_CONTAINERS=tank:200G,supertank:500G,megatank:1T
       - TZ=America/Los_Angeles
       - HC_URL=${HEALTHCHECK_HC_PTP_ARCHIVER}
     user: "1000:1000"
