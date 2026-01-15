@@ -1,8 +1,0 @@
----
-- name: "Update apt cache"
-  ansible.builtin.apt:
-    update_cache: true
-    cache_valid_time: 3600 # Update if cache is older than 1 hour
-
-- name: Deploy and configure Docker stack
-  ansible.builtin.include_tasks: docker_stack.yml

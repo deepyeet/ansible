@@ -55,12 +55,43 @@ The architecture uses "Self-Contained" roles. Utility roles (like generic wrappe
 | **`network_mounts`** | Local | **Network Storage Layer.** Mounts network shares (NFS/SMB) based on a dictionary of available shares and an enabled-list defined in `group_vars`. |
 | **`backup_target`** | Local | **Rsync Module Plugin.** Configures a specific rsync module (e.g., a backup target) by dropping config files into the conf.d directory. **Depends on `rsync_base` to provide the core rsync daemon platform.** Owns the systemd dependency for its specific module. |
 | **`rsync_base`** | Local | **Rsync Daemon Platform.** Installs the `rsync` package, deploys the global `/etc/rsyncd.conf` with modular includes, creates necessary directories, and manages the `rsync` service. Provides the foundational platform for rsync-based services. |
+| **`docker_stack`** | Local | **Generic Docker Compose Deployment.** Deploys Docker Compose stacks based on a list of definitions in `group_vars`. Each definition includes the compose file content, environment variables, and any static files, allowing for flexible, data-driven application deployment without creating a new role for each stack. |
 | **`torrenter`** | Local | **Application Layer (The "Hero" Role).** Installs the Transmission stack, manages the VPN (Gluetun), and **owns** its own maintenance logic. It depends on `physical_disks` for mounting its data volumes. Tasks are broken down into smaller, included files (`systemd_docker_dependency.yml`, `docker_stack.yml`, `cron_jobs.yml`) for clarity. |
-| **`geerlingguy.docker`**| External | **Dependency Layer.** Managed via `meta/main.yml` inside `torrenter`. It is never called directly in `site.yml`. |
+| **`geerlingguy.docker`**| External | **Dependency Layer.** Managed via `meta/main.yml` inside `torrenter` and `docker_stack`. It is never called directly in `site.yml`. |
 | **`geerlingguy.nodejs`**| External | **Dependency Layer.** Managed via `meta/main.yml` inside `user_friendly`. |
 | **`ntd.nut`** | External | **NUT Client.** Configures the Network UPS Tools (NUT) client to monitor a remote UPS server (e.g., a Synology NAS). |
 
-### 1.3.1 Systemd Dependencies
+### 1.3.1 Data-Driven Docker Deployments (`docker_stack`)
+
+To eliminate boilerplate and reduce role duplication, a generic `docker_stack` role has been introduced. This role moves the responsibility of defining a Docker Compose application from a dedicated role's `tasks` and `templates` into `group_vars`.
+
+**Key Features:**
+
+*   **Data-Centric:** Instead of creating a new role for each Docker-based application (like the old `cloudflared` role), you now define a stack as a data structure in a `group_vars` file (e.g., `group_vars/monolith/docker_stacks.yml`).
+*   **Role Logic:** The `docker_stack` role iterates through a list variable called `docker_stacks`. For each item in the list, it performs the following actions:
+    1.  Ensures a project directory exists.
+    2.  Uses `ansible.builtin.copy` with content derived from a `template` lookup to generate the `compose.yaml` and `.env` files directly from the variables. This allows the file content to be stored in YAML as multi-line strings while still being processed for Jinja2 expressions.
+    3.  Deploys the stack using `community.docker.docker_compose_v2`.
+    4.  It intelligently uses the `build: 'always'` flag only when the source files (`compose.yaml` or `.env`) have actually changed.
+*   **Variable Structure:** An example stack definition in `group_vars/monolith/docker_stacks.yml`:
+    ```yaml
+    # group_vars/monolith/docker_stacks.yml
+    docker_stacks:
+      - name: "cloudflared"
+        enabled: true
+        project_path: "/home/{{ ansible_user }}/ansible_docker/cloudflared"
+        compose_content: |
+          version: '3.3'
+          services:
+            cloudflared:
+              # ...
+        env_content: |
+          CLOUDFLARED_TUNNEL_TOKEN={{ CLOUDFLARED_TUNNEL_TOKEN }}
+    ```
+
+This approach makes adding new, simple Docker Compose-based services a matter of adding data to a YAML file, rather than scaffolding an entire new role.
+
+### 1.3.2 Systemd Dependencies
 
 To prevent race conditions where the Docker daemon starts before its required storage volumes are mounted, the `torrenter` role now encapsulates the logic to create a systemd drop-in override for the `docker.service` unit.
 

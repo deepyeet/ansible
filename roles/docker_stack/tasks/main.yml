@@ -1,0 +1,6 @@
+---
+- name: "Manage Docker Stacks"
+  ansible.builtin.include_tasks: "manage_stack.yml"
+  loop: "{{ docker_stacks | default([]) | selectattr('enabled', 'eq', true) }}"
+  loop_control:
+    loop_var: "stack"
