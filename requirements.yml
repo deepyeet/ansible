@@ -6,5 +6,3 @@ roles:
     version: 1.7.1
   - name: geerlingguy.nodejs
     version: 7.1.0
-collections:
-  - name: artis3n.tailscale
