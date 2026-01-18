@@ -2,7 +2,7 @@
 all:
   hosts:
     pi4_2020:
-      ansible_host: raspberrypi
+      ansible_host: 192.168.1.250
       ansible_connection: ssh
       physical_disks:
         - { path: "/mnt/expansion", uuid: "1b89df4a-82a2-4548-ba96-41b04b6a47f8", fstype: "ext4", opts: "defaults,noatime" }

@@ -26,8 +26,7 @@ services:
       - VPN_SERVICE_PROVIDER=protonvpn
       - VPN_TYPE=wireguard
       - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
-      - SERVER_COUNTRIES=United States
-      - SERVER_CITIES=Seattle,Los Angeles,San Jose
+      - WIREGUARD_PERSISTENT_KEEPALIVE_INTERVAL=15s
       - VPN_PORT_FORWARDING=on
       - VPN_PORT_FORWARDING_UP_COMMAND=/gluetun/update-port.sh {{ '{{PORT}}' }}
       - PORT_FORWARD_ONLY=on
@@ -37,7 +36,7 @@ services:
       - TR_PASS=${TR_PASS}
       - BLOCK_MALICIOUS=off
       - TZ=America/Los_Angeles
-      - DOT=off
+      - DNS_OVER_TLS=off
       - DNS_ADDRESS=10.2.0.1
     volumes:
       - ./gluetun/update-port.sh:/gluetun/update-port.sh
