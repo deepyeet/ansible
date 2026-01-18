@@ -57,20 +57,10 @@
     remote_src: no
   register: transmission_healthcheck_copy_result
 
-- name: "Copy static docker file: GEMINI.md"
-  ansible.builtin.copy:
-    src: "files/GEMINI.md"
-    dest: "/home/{{ansible_user}}/ansible_docker/transmission/GEMINI.md"
-    owner: "{{ansible_user}}"
-    group: "{{ansible_user}}"
-    mode: '0644' # Assuming it's a regular file
-    remote_src: no
-  register: gemini_md_copy_result
-
 # This task will aggregate the 'changed' status of all copy tasks
 - name: "Set fact if static docker files changed"
   ansible.builtin.set_fact:
-    static_docker_files_changed: "{{ backup_copy_result.changed or gluetun_copy_result.changed or mam_updater_copy_result.changed or ptp_archiver_copy_result.changed or transmission_healthcheck_copy_result.changed or gemini_md_copy_result.changed }}"
+    static_docker_files_changed: "{{ backup_copy_result.changed or gluetun_copy_result.changed or mam_updater_copy_result.changed or ptp_archiver_copy_result.changed or transmission_healthcheck_copy_result.changed }}"
 
 - name: "Template compose.yaml from j2"
   ansible.builtin.template:

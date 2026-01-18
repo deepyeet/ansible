@@ -1,6 +1,6 @@
 # Managed by Ansible
 [{{ backup_target_rsync_module_name }}]
-    path = {{ backup_target_rsync_base_path }}
+    path = {{ [backup_target_mount_base_path, backup_target_module_relative_path] | path_join }}
     comment = {{ backup_target_rsync_comment }}
     read only = no
     list = yes

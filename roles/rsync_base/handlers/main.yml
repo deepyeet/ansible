@@ -3,4 +3,5 @@
   ansible.builtin.service:
     name: "{{ rsync_service_name }}"
     state: restarted
+    daemon_reload: true
   when: rsync_service_name is defined and rsync_service_name != ""

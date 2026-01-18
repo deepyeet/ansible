@@ -10,7 +10,7 @@
     - role: physical_disks
     - role: backup_target
     - role: torrenter
-    - role: docker_stack
+
 
 - name: WSL Dev Environment
   hosts: wsl

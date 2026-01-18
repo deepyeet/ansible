@@ -20,7 +20,8 @@ torrenter_docker_volumes:
 # --- Rsync Backup Target ---
 rsync_service_name: "rsync"
 backup_target_rsync_module_name: "synology_target"
-backup_target_rsync_base_path: "/mnt/expansion/synology_vault"
+backup_target_mount_base_path: "/mnt/expansion"
+backup_target_module_relative_path: "synology_vault"
 backup_target_rsync_comment: "Backup Target for Synology"
 backup_target_rsync_uid: "1000"
 backup_target_rsync_gid: "1000"
