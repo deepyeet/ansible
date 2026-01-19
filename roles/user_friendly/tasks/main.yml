@@ -25,6 +25,8 @@
       - gdb
       - strace
       - ltrace
+      # Development tools
+      - python3-venv
     state: present
 
 - name: "Install Atuin from pre-compiled binary"

@@ -14,7 +14,7 @@ torrenter_docker_volumes:
     driver: local
     driver_opts:
       type: nfs
-      o: "addr=192.168.1.253,rw,noatime,bg"
+      o: "addr=192.168.1.253,rw,noatime,bg,nfsvers=4,nolock,soft,timeo=150"
       device: ":/volumeUSB2/usbshare"
 
 # --- Rsync Backup Target ---
