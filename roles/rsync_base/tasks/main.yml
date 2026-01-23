@@ -7,14 +7,17 @@
     name: rsync
     state: present
 
-- name: "Create rsync module directories"
+- name: "Create rsync configuration directory"
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: /etc/rsyncd.d
     state: directory
     mode: '0755'
-  loop:
-    - /etc/rsyncd.d
-    - /etc/rsyncd.secrets.d
+
+- name: "Create rsync secrets directory"
+  ansible.builtin.file:
+    path: /etc/rsyncd.secrets.d
+    state: directory
+    mode: '0700'
 
 - name: "Deploy global rsync configuration"
   ansible.builtin.template:
@@ -28,5 +31,5 @@
   ansible.builtin.service:
     name: "{{ rsync_service_name }}"
     state: started
-    enabled: yes
+    enabled: true
   when: rsync_service_name is defined and rsync_service_name != ""

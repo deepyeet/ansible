@@ -10,7 +10,7 @@ volumes:
 
 services:
   gluetun:
-    image: qmcgaw/gluetun
+    image: qmcgaw/gluetun:{{ torrenter_gluetun_version | default('v3.39.1') }}
     container_name: gluetun
     cap_add:
       - NET_ADMIN
@@ -35,7 +35,7 @@ services:
       - TR_USER=${TR_USER}
       - TR_PASS=${TR_PASS}
       - BLOCK_MALICIOUS=off
-      - TZ=America/Los_Angeles
+      - TZ={{ timezone | default('America/Los_Angeles') }}
       - DNS_OVER_TLS=off
       - DNS_ADDRESS=10.2.0.1
     volumes:
@@ -58,11 +58,11 @@ services:
         soft: 65535
         hard: 65535
     environment:
-      - PUID=1000
-      - PGID=1000
+      - PUID={{ torrenter_puid | default('1000') }}
+      - PGID={{ torrenter_pgid | default('1000') }}
       - USER=${TR_USER}
       - PASS=${TR_PASS}
-      - TZ=America/Los_Angeles
+      - TZ={{ timezone | default('America/Los_Angeles') }}
       - TRANSMISSION_PEER_LIMIT_GLOBAL=1500
       - TRANSMISSION_PEER_LIMIT_PER_TORRENT=200
     volumes:
@@ -91,7 +91,7 @@ services:
       - MAM_INTERVAL_NORMAL=60
       - MAM_INTERVAL_ERROR=60
       - MAM_INTERVAL_RATELIMIT=900
-      - TZ=America/Los_Angeles
+      - TZ={{ timezone | default('America/Los_Angeles') }}
       - HC_URL=${HEALTHCHECK_HC_MAM_UPDATER}
     volumes:
       - ./mam-updater/data:/data
@@ -109,9 +109,9 @@ services:
       - PTP_USER=${PTP_USER}
       - PTP_KEY=${PTP_KEY}
       - PTP_CONTAINERS=tank:200G,supertank:500G,megatank:1T
-      - TZ=America/Los_Angeles
+      - TZ={{ timezone | default('America/Los_Angeles') }}
       - HC_URL=${HEALTHCHECK_HC_PTP_ARCHIVER}
-    user: "1000:1000"
+    user: "{{ torrenter_puid | default('1000') }}:{{ torrenter_pgid | default('1000') }}"
     volumes:
       - {{ torrenter_data_host_path }}/transmission/watch:/watch
     restart: unless-stopped

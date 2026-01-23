@@ -47,7 +47,7 @@
           ansible.builtin.unarchive:
             src: "https://github.com/atuinsh/atuin/releases/latest/download/atuin-{{ atuin_arch }}-unknown-linux-gnu.tar.gz"
             dest: /tmp/
-            remote_src: yes
+            remote_src: true
           register: atuin_unarchive_result
 
         - name: "Copy the atuin binary to the final destination"
@@ -55,7 +55,7 @@
             src: "/tmp/atuin-{{ atuin_arch }}-unknown-linux-gnu/atuin"
             dest: /usr/local/bin/atuin
             mode: '0755'
-            remote_src: yes
+            remote_src: true
           when: atuin_unarchive_result.changed
 
         - name: "Clean up the temporary Atuin directory"
@@ -68,6 +68,13 @@
 - name: Install Google Gemini CLI (Global)
   community.general.npm:
     name: "@google/gemini-cli"
+    global: true
+    state: latest
+  become: true
+
+- name: Install Tree Sitter CLI
+  community.general.npm:
+    name: "tree-sitter-cli"
     global: true
     state: latest
   become: true

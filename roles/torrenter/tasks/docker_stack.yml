@@ -7,60 +7,25 @@
     group: "{{ansible_user}}"
     mode: '0755'
 
-- name: "Copy static docker file: backup"
+- name: "Copy static docker files"
   ansible.builtin.copy:
-    src: "files/backup/"
-    dest: "/home/{{ansible_user}}/ansible_docker/transmission/backup/"
-    owner: "{{ansible_user}}"
-    group: "{{ansible_user}}"
+    src: "files/{{ item }}/"
+    dest: "/home/{{ ansible_user }}/ansible_docker/transmission/{{ item }}/"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
     mode: '0755'
-    remote_src: no # Copy from controller to target
-  register: backup_copy_result
+    remote_src: false
+  loop:
+    - backup
+    - gluetun
+    - mam-updater
+    - ptp-archiver
+    - transmission-healthcheck
+  register: docker_files_copy
 
-- name: "Copy static docker file: gluetun"
-  ansible.builtin.copy:
-    src: "files/gluetun/"
-    dest: "/home/{{ansible_user}}/ansible_docker/transmission/gluetun/"
-    owner: "{{ansible_user}}"
-    group: "{{ansible_user}}"
-    mode: '0755'
-    remote_src: no
-  register: gluetun_copy_result
-
-- name: "Copy static docker file: mam-updater"
-  ansible.builtin.copy:
-    src: "files/mam-updater/"
-    dest: "/home/{{ansible_user}}/ansible_docker/transmission/mam-updater/"
-    owner: "{{ansible_user}}"
-    group: "{{ansible_user}}"
-    mode: '0755'
-    remote_src: no
-  register: mam_updater_copy_result
-
-- name: "Copy static docker file: ptp-archiver"
-  ansible.builtin.copy:
-    src: "files/ptp-archiver/"
-    dest: "/home/{{ansible_user}}/ansible_docker/transmission/ptp-archiver/"
-    owner: "{{ansible_user}}"
-    group: "{{ansible_user}}"
-    mode: '0755'
-    remote_src: no
-  register: ptp_archiver_copy_result
-
-- name: "Copy static docker file: transmission-healthcheck"
-  ansible.builtin.copy:
-    src: "files/transmission-healthcheck/"
-    dest: "/home/{{ansible_user}}/ansible_docker/transmission/transmission-healthcheck/"
-    owner: "{{ansible_user}}"
-    group: "{{ansible_user}}"
-    mode: '0755'
-    remote_src: no
-  register: transmission_healthcheck_copy_result
-
-# This task will aggregate the 'changed' status of all copy tasks
 - name: "Set fact if static docker files changed"
   ansible.builtin.set_fact:
-    static_docker_files_changed: "{{ backup_copy_result.changed or gluetun_copy_result.changed or mam_updater_copy_result.changed or ptp_archiver_copy_result.changed or transmission_healthcheck_copy_result.changed }}"
+    static_docker_files_changed: "{{ docker_files_copy.results | selectattr('changed', 'equalto', true) | length > 0 }}"
 
 - name: "Template compose.yaml from j2"
   ansible.builtin.template:

@@ -167,23 +167,31 @@ def run_transmission_rpc(session: requests.Session, method: str, arguments: dict
     except requests.RequestException as e:
         raise ConnectionError(f"Transmission RPC call '{method}' failed: {e}") from e
 
-def check_external_port(port: int) -> tuple[str, dict]:
-    """Checks the port status using the external service. Returns (status_bool, error_dict)."""
-    try:
-        response = requests.get(
-            f"https://portcheck.transmissionbt.com/{port}",
-            timeout=(5, 15), # (connect, read)
-        )
-        response.raise_for_status()
-        content = response.text.strip()
-        if content == "1":
-            return True, None
-        elif content == "0":
-            return False, None
-        else:
-            return None, {'error': 'E:PORTCHECK_UNEXPECTED_RESP', 'content': content}
-    except requests.RequestException as e:
-        return None, {'error': 'E:PORTCHECK_DOWN', 'exception': type(e).__name__}
+def check_external_port(port: int, retries: int = 3, delay: int = 5) -> tuple[str, dict]:
+    """Checks the port status using the external service, with retries. Returns (status_bool, error_dict)."""
+    for attempt in range(retries):
+        try:
+            response = requests.get(
+                f"https://portcheck.transmissionbt.com/{port}",
+                timeout=(5, 15),  # (connect, read)
+            )
+            response.raise_for_status()
+            content = response.text.strip()
+            if content == "1":
+                return True, None
+            elif content == "0":
+                return False, None
+            else:
+                # Unexpected response, so we should probably not retry.
+                logging.error(f"Port check received unexpected response: {content}")
+                return None, {'error': 'E:PORTCHECK_UNEXPECTED_RESP', 'content': content}
+        except requests.RequestException as e:
+            logging.warning(f"Port check attempt {attempt + 1}/{retries} failed: {e}")
+            if attempt < retries - 1:
+                time.sleep(delay)
+            else:
+                # This was the last attempt
+                return None, {'error': 'E:PORTCHECK_DOWN', 'exception': type(e).__name__}
 
 def main():
     """Main checking logic."""
