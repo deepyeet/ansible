@@ -17,7 +17,7 @@
   ansible.builtin.apt_repository:
     repo: "deb [signed-by=/etc/apt/keyrings/neovim-ppa.asc] http://ppa.launchpad.net/neovim-ppa/unstable/ubuntu jammy main"
     state: present
-    update_cache: yes
+    update_cache: true
   # This task will notify "Update apt cache" but also explicitly updates the cache itself.
   # The "Flush handlers" will still be useful for other potential handlers.
 
