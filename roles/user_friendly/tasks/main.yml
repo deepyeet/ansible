@@ -21,6 +21,7 @@
       - zoxide
       # Build and debugging tools
       - build-essential
+      - clang
       - cmake
       - gdb
       - strace
