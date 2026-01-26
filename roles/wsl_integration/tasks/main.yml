@@ -11,6 +11,8 @@
   ansible.builtin.file:
     path: "/home/{{ ansible_user }}/.local/bin"
     state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
     mode: '0755'
 
 - name: Download npiperelay (Fixed URL)
@@ -18,12 +20,16 @@
     src: https://github.com/jstarks/npiperelay/releases/download/v0.1.0/npiperelay_windows_amd64.zip
     dest: "/home/{{ ansible_user }}/.local/bin"
     remote_src: true
-    include: 
+    include:
       - npiperelay.exe
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
     mode: '0755'
 
 - name: Deploy SSH Agent Relay Script
   ansible.builtin.copy:
     src: wsl-ssh-agent-relay
     dest: "/home/{{ ansible_user }}/.local/bin/wsl-ssh-agent-relay"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
     mode: '0755'
