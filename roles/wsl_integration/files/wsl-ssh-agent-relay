@@ -1,16 +1,148 @@
 #!/bin/bash
 # ANSIBLE MANAGED: Do not edit manually
+# WSL SSH Agent Relay - bridges Windows OpenSSH agent to WSL via npiperelay
+#
+# Usage: wsl-ssh-agent-relay [start|stop|restart|status]
+#        Default action is 'start' (idempotent - won't start if already running)
+
+set -euo pipefail
 
 RELAY_BIN="$HOME/.local/bin/npiperelay.exe"
 SOCK_PATH="$HOME/.ssh/agent.sock"
 PIPE_PATH="//./pipe/openssh-ssh-agent"
+PID_FILE="$HOME/.ssh/agent-relay.pid"
 
-# Ensure socket directory exists
-mkdir -p "$(dirname "$SOCK_PATH")"
+log() {
+    echo "[wsl-ssh-agent-relay] $*" >&2
+}
 
-# Cleanup old socket
-rm -f "$SOCK_PATH"
+is_running() {
+    if [[ -f "$PID_FILE" ]]; then
+        local pid
+        pid=$(cat "$PID_FILE")
+        if kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+    fi
+    return 1
+}
 
-# Start the relay in the background using socat
-# We use setsid to detach it properly
-(setsid socat UNIX-LISTEN:"$SOCK_PATH",fork,mode=600 EXEC:"$RELAY_BIN -ei -s $PIPE_PATH",nofork &) >/dev/null 2>&1
+is_socket_working() {
+    if [[ -S "$SOCK_PATH" ]]; then
+        # Test if we can actually use the socket
+        SSH_AUTH_SOCK="$SOCK_PATH" ssh-add -l &>/dev/null
+        local ret=$?
+        # ssh-add -l returns 0 (keys found), 1 (no keys), or 2 (can't connect)
+        if [[ $ret -eq 0 || $ret -eq 1 ]]; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+cleanup() {
+    rm -f "$SOCK_PATH" "$PID_FILE"
+}
+
+kill_orphans() {
+    # Kill any orphaned socat processes listening on our socket
+    pkill -f "socat.*UNIX-LISTEN:$SOCK_PATH" 2>/dev/null || true
+}
+
+do_stop() {
+    if is_running; then
+        local pid
+        pid=$(cat "$PID_FILE")
+        log "Stopping relay (PID: $pid)"
+        kill "$pid" 2>/dev/null || true
+        sleep 0.5
+        # Force kill if still running
+        kill -9 "$pid" 2>/dev/null || true
+    fi
+    kill_orphans
+    cleanup
+    log "Stopped"
+}
+
+do_start() {
+    # Ensure socket directory exists
+    mkdir -p "$(dirname "$SOCK_PATH")"
+
+    # Check if already running and working
+    if is_running && is_socket_working; then
+        log "Already running and healthy (PID: $(cat "$PID_FILE"))"
+        return 0
+    fi
+
+    # Clean up any stale state
+    kill_orphans
+    cleanup
+
+    # Verify relay binary exists
+    if [[ ! -x "$RELAY_BIN" ]]; then
+        log "ERROR: Relay binary not found or not executable: $RELAY_BIN"
+        return 1
+    fi
+
+    # Start the relay
+    socat UNIX-LISTEN:"$SOCK_PATH",fork,mode=600 \
+          EXEC:"$RELAY_BIN -ei -s $PIPE_PATH",nofork &
+    local pid=$!
+    echo "$pid" > "$PID_FILE"
+
+    # Wait briefly and verify it started
+    sleep 0.5
+    if ! kill -0 "$pid" 2>/dev/null; then
+        log "ERROR: Relay failed to start"
+        cleanup
+        return 1
+    fi
+
+    # Verify socket is working
+    if ! is_socket_working; then
+        log "WARNING: Relay started but socket test failed (Windows SSH agent may not be running)"
+    else
+        log "Started (PID: $pid)"
+    fi
+
+    return 0
+}
+
+do_status() {
+    if is_running; then
+        local pid
+        pid=$(cat "$PID_FILE")
+        echo "Relay is running (PID: $pid)"
+        if is_socket_working; then
+            echo "Socket is healthy"
+            echo "Keys:"
+            SSH_AUTH_SOCK="$SOCK_PATH" ssh-add -l 2>/dev/null || echo "  (no keys loaded)"
+        else
+            echo "Socket is NOT responding (Windows SSH agent may not be running)"
+        fi
+        return 0
+    else
+        echo "Relay is not running"
+        return 1
+    fi
+}
+
+case "${1:-start}" in
+    start)
+        do_start
+        ;;
+    stop)
+        do_stop
+        ;;
+    restart)
+        do_stop
+        do_start
+        ;;
+    status)
+        do_status
+        ;;
+    *)
+        echo "Usage: $0 [start|stop|restart|status]" >&2
+        exit 1
+        ;;
+esac
