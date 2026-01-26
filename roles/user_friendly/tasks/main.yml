@@ -27,6 +27,7 @@
       - ltrace
       # Development tools
       - python3-venv
+      - luarocks
     state: present
 
 - name: "Install Atuin from pre-compiled binary"

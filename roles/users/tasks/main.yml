@@ -15,6 +15,8 @@
     append: true # Don't remove existing groups (like video/input)
     state: present
   loop: "{{ managed_users }}"
+  loop_control:
+    label: "{{ item.username }}"
 
 - name: Manage authorized keys for users
   ansible.posix.authorized_key:
@@ -23,6 +25,8 @@
     state: present
     exclusive: false
   loop: "{{ managed_users }}"
+  loop_control:
+    label: "{{ item.username }}"
   when: item.authorized_keys is defined
   no_log: true
 
