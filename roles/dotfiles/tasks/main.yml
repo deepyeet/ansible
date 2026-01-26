@@ -27,6 +27,8 @@
     state: directory
     mode: '0700'
   loop: "{{ managed_users }}"
+  loop_control:
+    label: "{{ item.username }}"
   become: true
   become_user: "{{ item.username }}"
   when: item.dotfiles.deploy_key is defined
@@ -39,10 +41,11 @@
     identity_file: "/home/{{ item.username }}/.ssh/id_ed25519_deploy"
     state: present
   loop: "{{ managed_users }}"
+  loop_control:
+    label: "{{ item.username }}"
   become: true
   become_user: "{{ item.username }}"
   when: item.dotfiles.deploy_key is defined
-  no_log: true
 
 - name: Configure General SSH Defaults (Host *)
   ansible.builtin.blockinfile:
@@ -55,6 +58,8 @@
     create: true
     mode: '0600'
   loop: "{{ managed_users }}"
+  loop_control:
+    label: "{{ item.username }}"
   become: true
   become_user: "{{ item.username }}"
 
@@ -65,6 +70,8 @@
     path: "/home/{{ item.username }}/.ssh/known_hosts"
     state: present
   loop: "{{ managed_users }}"
+  loop_control:
+    label: "{{ item.username }}"
   become: true
   become_user: "{{ item.username }}"
   when: item.dotfiles.deploy_key is defined
@@ -75,10 +82,12 @@
     dest: "/home/{{ item.username }}/.ssh/id_ed25519_deploy"
     mode: '0600'
   loop: "{{ managed_users }}"
+  loop_control:
+    label: "{{ item.username }}"
   become: true
   become_user: "{{ item.username }}"
   when: item.dotfiles.deploy_key is defined
-  no_log: true # Do not log the key content
+  no_log: true
 
 - name: Checkout Dotfiles (Using the specific key)
   ansible.builtin.git:
@@ -90,14 +99,17 @@
   become: true
   become_user: "{{ item.username }}"
   loop: "{{ managed_users }}"
+  loop_control:
+    label: "{{ item.username }}"
   when: item.dotfiles is defined and item.dotfiles.repo is defined and item.dotfiles.deploy_key is defined
-  no_log: true
 
 - name: Get user system information
   ansible.builtin.getent:
     database: passwd
     key: "{{ item.username }}"
   loop: "{{ managed_users }}"
+  loop_control:
+    label: "{{ item.username }}"
 
 - name: Stow dotfiles (Symlink all packages)
   ansible.builtin.shell:
@@ -106,6 +118,8 @@
   become: true
   become_user: "{{ item.username }}"
   loop: "{{ managed_users }}"
+  loop_control:
+    label: "{{ item.username }}"
   register: stow_out
   changed_when: "'LINK' in stow_out.stderr"
   when: item.dotfiles is defined and item.dotfiles.repo is defined
