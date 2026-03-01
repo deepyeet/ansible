@@ -31,6 +31,30 @@
       - luarocks
     state: present
 
+- name: Install 1Password CLI
+  block:
+    - name: Set 1Password architecture fact
+      ansible.builtin.set_fact:
+        op_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' if ansible_architecture == 'x86_64' else ansible_architecture }}"
+
+    - name: Add 1Password GPG key
+      ansible.builtin.get_url:
+        url: https://downloads.1password.com/linux/keys/1password.asc
+        dest: /usr/share/keyrings/1password-archive-keyring.asc
+        mode: '0644'
+
+    - name: Add 1Password repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch={{ op_arch }} signed-by=/usr/share/keyrings/1password-archive-keyring.asc] https://downloads.1password.com/linux/debian/{{ op_arch }} stable main"
+        state: present
+        filename: 1password
+
+    - name: Install 1password-cli
+      ansible.builtin.apt:
+        name: 1password-cli
+        state: present
+  become: true
+
 - name: "Install Atuin from pre-compiled binary"
   block:
     - name: "Check if atuin is already installed"
@@ -70,6 +94,13 @@
 - name: Install Google Gemini CLI (Global)
   community.general.npm:
     name: "@google/gemini-cli"
+    global: true
+    state: latest
+  become: true
+
+- name: Install Claude Code (Global)
+  community.general.npm:
+    name: "@anthropic-ai/claude-code"
     global: true
     state: latest
   become: true
