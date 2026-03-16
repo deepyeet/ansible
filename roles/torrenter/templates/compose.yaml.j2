@@ -10,7 +10,7 @@ volumes:
 
 services:
   gluetun:
-    image: qmcgaw/gluetun:{{ torrenter_gluetun_version | default('v3.39.1') }}
+    image: qmcgaw/gluetun:{{ torrenter_gluetun_version | default('v3.41.1') }}
     container_name: gluetun
     cap_add:
       - NET_ADMIN
@@ -22,7 +22,8 @@ services:
       - "8000:8000"
     environment:
       - HTTP_CONTROL_SERVER_ADDRESS=:8000
-      - HTTP_CONTROL_SERVER_AUTH_DEFAULT_ROLE='{"auth":"basic","username":"${GLUETUN_USER}","password":"${GLUETUN_PASS}"}'
+      - HTTP_CONTROL_SERVER_AUTH_BASIC_USER=${GLUETUN_USER}
+      - HTTP_CONTROL_SERVER_AUTH_BASIC_PASS=${GLUETUN_PASS}
       - VPN_SERVICE_PROVIDER=protonvpn
       - VPN_TYPE=wireguard
       - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
