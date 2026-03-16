@@ -105,6 +105,13 @@
     state: latest
   become: true
 
+- name: Install Bun (Global)
+  community.general.npm:
+    name: "bun"
+    global: true
+    state: latest
+  become: true
+
 - name: Install Tree Sitter CLI
   community.general.npm:
     name: "tree-sitter-cli"
