@@ -36,6 +36,17 @@ nut_services:
   - nut.target
 nut_ups: [] # Explicitly define no local UPS devices
 
+# --- Samba ---
+samba_username: "{{ secret_unix_name }}"
+samba_user_password: "{{ samba_password }}"
+samba_shares:
+  - name: expansion
+    comment: "Expansion Disk"
+    path: /mnt/expansion
+    browseable: "yes"
+    read_only: "no"
+    writable: "yes"
+
 # --- Docker Daemon Configuration ---
 docker_daemon_options:
   log-driver: "journald"
