@@ -1,0 +1,25 @@
+# Managed by Ansible - do not edit manually
+[global]
+   workgroup = WORKGROUP
+   server string = Samba Server
+   security = user
+   map to guest = Bad User
+   dns proxy = no
+   log file = /var/log/samba/log.%m
+   max log size = 1000
+   logging = file
+   panic action = /usr/share/samba/panic-action %d
+
+{% for share in samba_shares %}
+[{{ share.name }}]
+   comment = {{ share.comment | default(share.name) }}
+   path = {{ share.path }}
+   browseable = {{ share.browseable | default('yes') }}
+   read only = {{ share.read_only | default('no') }}
+   writable = {{ share.writable | default('yes') }}
+   valid users = {{ share.valid_users | default(samba_username) }}
+   create mask = 0664
+   directory mask = 0775
+   force user = {{ share.force_user | default(samba_username) }}
+
+{% endfor %}

@@ -9,6 +9,7 @@
     - role: dotfiles
     - role: physical_disks
     - role: backup_target
+    - role: samba
     - role: torrenter
 
 
