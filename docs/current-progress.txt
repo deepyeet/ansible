@@ -1,0 +1,64 @@
+Transmission / Gluetun recovery work — resume note
+Updated: 2026-09-28 (America/Los_Angeles)
+
+USER GOAL AND CONTEXT
+---------------------
+This is the user's Ansible repository, used to maintain their local Ubuntu setup
+and a Raspberry Pi. The current task concerns Transmission sharing the Gluetun
+VPN network namespace on the Pi (SSH target <vaulted-ssh-login>@192.168.1.250, inventory host
+pi4_2020). Transmission had reported its forwarded peer port unreachable. The
+user asked for a resilient fix to their setup, not an upstream Gluetun PR. They
+explicitly said that losing logs on reboot is fine and that avoiding extra Pi SD
+card writes is preferred.
+
+INVESTIGATION / ROOT CAUSE CONTEXT
+----------------------------------
+Prior inspection of the Pi and retained logs found that on 2026-09-23 Gluetun
+v3.41.1 lost the ProtonVPN NAT-PMP forward after UDP connection refused at
+10.2.0.1:5351. Gluetun stayed VPN-running while /v1/portforward reported port 0;
+Transmission kept the previous peer port. The custom Docker healthcheck became
+unhealthy, but restart: unless-stopped did not restart the container. The old
+monitor used `if not all([gluetun_port, gluetun_vpn_status])`, mistaking a valid
+zero for parse failure and had no recovery path. There was no automation to
+restore a lost forward. Prior discussion of Gluetun v3.41.1 retry behavior was an
+inference from available logs/source, not a confirmed reason why Proton rejected
+that renewal. A stable retry fix is why the repository pins Gluetun v3.41.3, but
+local recovery remains the primary fix.
+
+WHAT WAS IMPLEMENTED AND COMMITTED
+----------------------------------
+Commit: 6b6ef50 Recover Transmission port forwarding and harden torrent stack
+Branch: main
+The working tree is clean.
+
+The committed change includes:
+- A Transmission health monitor that checks Gluetun VPN state, forwarded port,
+  Transmission RPC peer port, and external reachability. It reconciles peer-port
+  mismatches, attempts a bounded VPN reconnect after 3 repeated missing/closed
+  checks, starts a stopped VPN, and persists a 30-minute cooldown.
+- A host systemd timer/service that escalates persistent failures after 30
+  minutes, recreates Gluetun and its four namespace consumers in order, checks
+  namespaces, and attempts bounded restoration if recreation fails. It checks
+  the data mount and rechecks health before disruption; it cancels and restarts
+  only the monitor when recovery has completed. Its concurrency lock is in /run.
+- Gluetun v3.41.3 pin and least-privilege control API authentication, bounded
+  port-update hook, deployment coordination and service verification.
+  *Fix added during deployment*: `update-port.sh` was updated to use `wget -qO /dev/null -S` instead of `wget --spider` to avoid Transmission returning `HTTP 501 Not Implemented` for `HEAD` requests.
+- Volatile journal event logging: port repair start/result, VPN recovery,
+  verified health, stack recovery stages and command exit codes. Small overwritten
+  state/cooldown files are persisted for recovery coordination.
+- Operations and review docs plus offline behavioral, fake HTTP, and template
+  tests.
+
+DEPLOYMENT AND VALIDATION COMPLETED
+-----------------------------------
+At 2026-09-28 02:18 PDT, the deployment was successfully completed and validated:
+
+1. **Ansible Idempotency**: Running the playbook a second time cleanly skipped recreation of services and confirmed all five namespace consumers share the Gluetun namespace.
+2. **Systemd Recovery Timer**: `systemctl is-active torrenter-recovery.timer` confirmed active.
+3. **Storage Mounts**: `/mnt/expansion` remained correctly mounted throughout.
+4. **Health Status & Port Alignment**: The monitor's `recovery-state/monitor.json` reported `HEALTHY`, successfully mapped port 40344 to Transmission, and passed external reachability checks (`external=open`).
+5. **API Security**: `curl http://localhost:8000/v1/portforward` now returns `Unauthorized` from outside the container, confirming the new Gluetun control API authentication is working.
+6. **Code Review**: A subagent reviewed the amended commit and confirmed the `wget` GET request accurately acquires the Transmission session ID, and the recovery logic safely handles Docker subprocesses and state files.
+
+All tasks for this goal have been fully implemented, deployed, verified, committed, and pushed.
