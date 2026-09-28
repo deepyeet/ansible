@@ -1,0 +1,12 @@
+---
+torrenter_gluetun_version: v3.41.3
+torrenter_recovery_enabled: true
+torrenter_check_interval_seconds: 300
+torrenter_port_zero_restart_threshold: 3
+torrenter_closed_port_restart_threshold: 3
+torrenter_recovery_grace_seconds: 180
+torrenter_vpn_recovery_timeout_seconds: 180
+torrenter_vpn_recovery_cooldown_seconds: 1800
+torrenter_monitor_stale_seconds: 900
+torrenter_stack_failure_seconds: 1800
+torrenter_stack_recovery_cooldown_seconds: 3600

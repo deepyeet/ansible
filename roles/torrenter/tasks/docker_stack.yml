@@ -7,6 +7,22 @@
     group: "{{ansible_user}}"
     mode: '0755'
 
+- name: Ensure Gluetun auth directory exists
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/ansible_docker/transmission/gluetun/auth"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0700'
+
+- name: Ensure monitor recovery state directory exists
+  ansible.builtin.file:
+    path: "/home/{{ ansible_user }}/ansible_docker/transmission/recovery-state"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0700'
+
 - name: "Copy static docker files"
   ansible.builtin.copy:
     src: "files/{{ item }}/"
@@ -27,6 +43,17 @@
   ansible.builtin.set_fact:
     static_docker_files_changed: "{{ docker_files_copy.results | selectattr('changed', 'equalto', true) | length > 0 }}"
 
+- name: Template Gluetun control authentication
+  ansible.builtin.template:
+    src: gluetun-auth.toml.j2
+    dest: "/home/{{ ansible_user }}/ansible_docker/transmission/gluetun/auth/config.toml"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0600'
+  register: gluetun_auth_template
+  no_log: true
+  diff: false
+
 - name: "Template compose.yaml from j2"
   ansible.builtin.template:
     src: "compose.yaml.j2"
@@ -46,9 +73,6 @@
   no_log: true
   register: docker_env_template
 
-- name: "Deploy the transmission docker stack"
-  community.docker.docker_compose_v2:
-    project_src: "/home/{{ansible_user}}/ansible_docker/transmission"
-    state: present
-    build: "{{ 'always' if (static_docker_files_changed or docker_compose_template.changed or docker_env_template.changed) else 'policy' }}" # Conditionally build images
-    # No rebuild: true is needed here, build: always handles it.
+- name: Validate and apply Docker stack outside Ansible check mode
+  ansible.builtin.include_tasks: docker_runtime.yml
+  when: not ansible_check_mode

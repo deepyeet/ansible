@@ -1,0 +1,10 @@
+[Unit]
+Description=Recover the Transmission VPN stack after persistent failure
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/torrenter-recovery --project /home/{{ ansible_user }}/ansible_docker/transmission --data-mount {{ torrenter_data_host_path }} --monitor-state /home/{{ ansible_user }}/ansible_docker/transmission/recovery-state/monitor.json --state-dir /var/lib/torrenter-recovery --stale {{ torrenter_monitor_stale_seconds }} --failure {{ torrenter_stack_failure_seconds }} --cooldown {{ torrenter_stack_recovery_cooldown_seconds }}
+StateDirectory=torrenter-recovery
+RuntimeDirectory=torrenter-recovery
+TimeoutStartSec=600

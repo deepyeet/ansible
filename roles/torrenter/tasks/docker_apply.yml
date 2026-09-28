@@ -1,0 +1,123 @@
+---
+- name: Build torrent helper images with the current source
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - -f
+      - "/home/{{ ansible_user }}/ansible_docker/transmission/compose.yaml"
+      - build
+      - transmission-healthcheck
+      - mam-updater
+      - ptp-archiver
+  changed_when: false
+
+- name: Pull pinned Gluetun image before service interruption
+  ansible.builtin.command:
+    argv: [docker, image, pull, "qmcgaw/gluetun:{{ torrenter_gluetun_version }}"]
+  when: torrenter_namespace_recreate
+
+- name: Stop old torrent namespace consumers before replacing Gluetun
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - -f
+      - "/home/{{ ansible_user }}/ansible_docker/transmission/compose.yaml"
+      - stop
+      - transmission-healthcheck
+      - mam-updater
+      - ptp-archiver
+      - transmission
+  when: torrenter_namespace_recreate
+
+- name: Start new Gluetun network namespace
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - -f
+      - "/home/{{ ansible_user }}/ansible_docker/transmission/compose.yaml"
+      - up
+      - -d
+      - --no-deps
+      - --force-recreate
+      - --no-build
+      - --pull
+      - never
+      - gluetun
+  when: torrenter_namespace_recreate
+
+- name: Recreate consumers in Gluetun's new network namespace
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - -f
+      - "/home/{{ ansible_user }}/ansible_docker/transmission/compose.yaml"
+      - up
+      - -d
+      - --no-deps
+      - --force-recreate
+      - --no-build
+      - --pull
+      - never
+      - transmission
+      - transmission-healthcheck
+      - mam-updater
+      - ptp-archiver
+  when: torrenter_namespace_recreate
+
+- name: Ensure unchanged torrent services are running
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - -f
+      - "/home/{{ ansible_user }}/ansible_docker/transmission/compose.yaml"
+      - up
+      - -d
+      - --no-deps
+      - --no-build
+      - --pull
+      - never
+      - gluetun
+      - transmission
+      - mam-updater
+      - ptp-archiver
+  when: not torrenter_namespace_recreate
+  changed_when: false
+
+- name: Recreate monitor when its image source changed
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - -f
+      - "/home/{{ ansible_user }}/ansible_docker/transmission/compose.yaml"
+      - up
+      - -d
+      - --no-deps
+      - --force-recreate
+      - --no-build
+      - --pull
+      - never
+      - transmission-healthcheck
+  when: not torrenter_namespace_recreate and torrenter_monitor_recreate
+
+- name: Ensure unchanged monitor is running
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - -f
+      - "/home/{{ ansible_user }}/ansible_docker/transmission/compose.yaml"
+      - up
+      - -d
+      - --no-deps
+      - --no-build
+      - --pull
+      - never
+      - transmission-healthcheck
+  when: not torrenter_namespace_recreate and not torrenter_monitor_recreate
+  changed_when: false

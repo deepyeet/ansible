@@ -13,9 +13,9 @@ TR_HOST="${TR_HOST}"
 TR_PORT="${TR_PORT}"
 NEW_PORT=$1
 
-# Retry Settings: 60 checks * 5 seconds = 5 Minutes of wait time.
-MAX_RETRIES=60 
-SLEEP_SEC=5
+# Gluetun bounds this entire hook to 30 seconds. The monitor retries missed updates.
+MAX_RETRIES=3
+SLEEP_SEC=3
 
 # --- LOGGING FUNCTION ---
 log() {
@@ -23,8 +23,11 @@ log() {
 }
 
 # --- 1. PRE-FLIGHT CHECKS ---
-if [ -z "$NEW_PORT" ]; then
-    log "CRITICAL: No port provided by Gluetun. Exiting."
+case "$NEW_PORT" in
+    ''|*[!0-9]*) log "CRITICAL: Invalid forwarded port."; exit 1 ;;
+esac
+if [ "$NEW_PORT" -lt 1 ] || [ "$NEW_PORT" -gt 65535 ]; then
+    log "CRITICAL: Forwarded port out of range."
     exit 1
 fi
 
@@ -42,7 +45,7 @@ log "Starting port update to: $NEW_PORT"
 attempt=1
 while [ $attempt -le $MAX_RETRIES ]; do
     # Capture headers (-S) to stderr, redirect to stdout (2>&1)
-    HTTP_CHECK=$(wget --no-check-certificate -q -S --spider \
+    HTTP_CHECK=$(wget --timeout=5 --tries=1 -qO /dev/null -S \
         --http-user="$TR_USER" --http-password="$TR_PASS" \
         "http://$TR_HOST:$TR_PORT/transmission/rpc" 2>&1)
 
@@ -70,7 +73,7 @@ fi
 # --- 3. GET SESSION ID ---
 log "Authenticating and requesting Session ID..."
 
-HEADERS=$(wget --no-check-certificate -q -S --spider \
+HEADERS=$(wget --timeout=5 --tries=1 -qO /dev/null -S \
     --http-user="$TR_USER" --http-password="$TR_PASS" \
     "http://$TR_HOST:$TR_PORT/transmission/rpc" 2>&1)
 
@@ -84,16 +87,15 @@ if [ -z "$SESSION_ID" ]; then
     if [ "$ERROR_CODE" = "401" ]; then
         log "DIAGNOSIS: HTTP 401 Unauthorized. Check your Username/Password in compose.yaml."
     else
-        log "DIAGNOSIS: Unknown error (HTTP $ERROR_CODE). Headers dump:"
-        echo "$HEADERS"
+        log "DIAGNOSIS: Unexpected HTTP $ERROR_CODE while getting session ID."
     fi
     exit 1
 fi
 
-log "Session ID acquired: $SESSION_ID"
+log "Session ID acquired."
 
 # --- 4. EXECUTE UPDATE ---
-RESPONSE=$(wget -qO- --http-user="$TR_USER" --http-password="$TR_PASS" \
+RESPONSE=$(wget --timeout=5 --tries=1 -qO- --http-user="$TR_USER" --http-password="$TR_PASS" \
   --header="X-Transmission-Session-Id: $SESSION_ID" \
   --post-data="{\"method\":\"session-set\",\"arguments\":{\"peer-port\":$NEW_PORT}}" \
   "http://$TR_HOST:$TR_PORT/transmission/rpc")

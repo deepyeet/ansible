@@ -1,0 +1,10 @@
+[Unit]
+Description=Check the Transmission VPN stack for persistent failure
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=60s
+Unit=torrenter-recovery.service
+
+[Install]
+WantedBy=timers.target

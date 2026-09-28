@@ -1,283 +1,483 @@
+"""Observe Transmission's VPN port and perform bounded, verified repairs."""
 
-import os
-import sys
-import time
-import requests
+import json
 import logging
+import os
+import hashlib
+import tempfile
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+import requests
 
 
-# --- Custom Exception for Healthchecks ---
-class HealthcheckError(Exception):
-    """Custom exception allowing for intelligent, prioritized message truncation."""
-    def __init__(self, message, diag_context=None, torrent=None, mismatch_ports=None, portcheck_error=None):
-        self.message = message
-        self.diag_context = diag_context
-        self.torrent = torrent
-        self.mismatch_ports = mismatch_ports
-        self.portcheck_error = portcheck_error
-        super().__init__(self.full_message)
+LOG = logging.getLogger("transmission-healthcheck")
+PORT_CHECK_URL = "https://portcheck.transmissionbt.com"
+
+
+class Fault(Exception):
+    def __init__(self, code, detail="", recoverable=False):
+        self.code = code
+        self.detail = detail
+        self.recoverable = recoverable
+        super().__init__(f"{code}: {detail}" if detail else code)
+
+
+@dataclass(frozen=True)
+class Config:
+    tr_host: str
+    tr_port: int
+    tr_user: str
+    tr_pass: str
+    gluetun_host: str
+    gluetun_port: int
+    gluetun_user: str
+    gluetun_pass: str
+    hc_url: str
+    state_dir: Path
+    interval: int = 300
+    zero_threshold: int = 3
+    closed_threshold: int = 3
+    grace: int = 180
+    recovery_timeout: int = 180
+    cooldown: int = 1800
+    recovery_enabled: bool = True
+
+    @classmethod
+    def from_env(cls, env=None):
+        env = os.environ if env is None else env
+
+        def positive(name, default):
+            value = int(env.get(name, default))
+            if value <= 0:
+                raise ValueError(f"{name} must be positive")
+            return value
+
+        enabled = env.get("RECOVERY_ENABLED", "true").lower()
+        if enabled not in ("true", "false"):
+            raise ValueError("RECOVERY_ENABLED must be true or false")
+        config = cls(
+            tr_host=env.get("TR_HOST", "localhost"),
+            tr_port=positive("TR_PORT", 9091),
+            tr_user=env.get("TR_USER", ""),
+            tr_pass=env.get("TR_PASS", ""),
+            gluetun_host=env.get("GLUETUN_HOST", "localhost"),
+            gluetun_port=positive("GLUETUN_PORT", 8000),
+            gluetun_user=env.get("GLUETUN_USER", ""),
+            gluetun_pass=env.get("GLUETUN_PASS", ""),
+            hc_url=env.get("HC_URL", ""),
+            state_dir=Path(env.get("RECOVERY_STATE_DIR", "/state")),
+            interval=positive("CHECK_INTERVAL_SECONDS", 300),
+            zero_threshold=positive("PORT_ZERO_RESTART_THRESHOLD", 3),
+            closed_threshold=positive("CLOSED_PORT_RESTART_THRESHOLD", 3),
+            grace=int(env.get("RECOVERY_GRACE_SECONDS", 180)),
+            recovery_timeout=positive("VPN_RECOVERY_TIMEOUT_SECONDS", 180),
+            cooldown=positive("VPN_RECOVERY_COOLDOWN_SECONDS", 1800),
+            recovery_enabled=enabled == "true",
+        )
+        if config.grace < 0 or config.recovery_timeout < 20:
+            raise ValueError("invalid recovery grace or timeout")
+        if not all((config.tr_user, config.tr_pass, config.gluetun_user, config.gluetun_pass)):
+            raise ValueError("Transmission and Gluetun credentials are required")
+        return config
+
+
+def valid_port(value, allow_zero=False):
+    return type(value) is int and (0 if allow_zero else 1) <= value <= 65535
+
+
+def atomic_json(path, value):
+    """Replace a state file without exposing a partially written JSON document."""
+    path = Path(path)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as output:
+            json.dump(value, output, separators=(",", ":"))
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+class Monitor:
+    def __init__(self, config, http=None, clock=None, monotonic=None, sleep=None):
+        self.config = config
+        self.http = http if http is not None else requests.Session()
+        self.tr_http = requests.Session()
+        self.clock = clock if clock is not None else time.time
+        self.monotonic = monotonic if monotonic is not None else time.monotonic
+        self.sleep = sleep if sleep is not None else time.sleep
+        self.started_at = self.monotonic()
+        self.grace_until = self.started_at + config.grace
+        self.last_start_attempt = float("-inf")
+        self.zero_count = 0
+        self.closed_count = 0
+        self.closed_port = None
+        self.gluetun_port = None
+        self.transmission_port = None
+        self.external = "not_checked"
+        self.last_cycle_at = None
+        self.last_status = None
 
     @property
-    def full_message(self):
-        """The complete, untruncated error message for local logging."""
-        if self.portcheck_error:
-            detail = self.portcheck_error.get('content') or self.portcheck_error.get('exception')
-            return f"{self.message}({detail}) | {self.diag_context}"
-        if self.mismatch_ports:
-            g = self.mismatch_ports.get('gluetun')
-            t = self.mismatch_ports.get('transmission')
-            return f"{self.message}(G:{g}|T:{t}) | {self.diag_context}"
-        if self.torrent:
-            return f"{self.message} T:{self.torrent.get('id')}({self.torrent.get('name')}) - {self.torrent.get('errorString')} | {self.diag_context}"
-        if self.diag_context:
-            return f"{self.message} | {self.diag_context}"
-        return self.message
+    def vpn_url(self):
+        return f"http://{self.config.gluetun_host}:{self.config.gluetun_port}"
 
     @property
-    def hc_message(self):
-        """A truncated message for Healthchecks.io, prioritizing critical info."""
-        full_msg = self.full_message
-        if len(full_msg) <= 100:
-            return full_msg
+    def tr_url(self):
+        return f"http://{self.config.tr_host}:{self.config.tr_port}/transmission/rpc"
 
-        # For port check errors
-        if self.portcheck_error:
-            p1 = self.message
-            detail = self.portcheck_error.get('content') or self.portcheck_error.get('exception')
-            p2 = f"({detail})"
-            msg = f"{p1}{p2}"
-            if len(msg) <= 100:
-                return msg
-            return msg[:100]
-
-        # For port mismatch errors
-        if self.mismatch_ports:
-            g = self.mismatch_ports.get('gluetun')
-            t = self.mismatch_ports.get('transmission')
-            p1 = self.message
-            p2 = f"(G:{g}|T:{t})"
-            msg = f"{p1}{p2}"
-            if len(msg) <= 100:
-                return msg
-            return msg[:100]
-
-        # For torrent-specific errors
-        if self.torrent:
-            p1 = self.message
-            p2 = f" T:{self.torrent.get('id')}({self.torrent.get('name')})"
-            p3 = f": {self.torrent.get('errorString')}"
-            
-            msg = f"{p1}{p2}{p3}"
-            if len(msg) <= 100:
-                return msg
-            
-            available_len = 100 - len(f"{p1}{p2}")
-            if available_len > 4:
-                p3_trunc = p3[:available_len - 3] + "..."
-                return f"{p1}{p2}{p3_trunc}"
-
-            p2_trunc = f" T:{self.torrent.get('id')}"
-            available_len = 100 - len(f"{p1}{p2_trunc}")
-            if available_len > 4:
-                p3_trunc = p3[:available_len - 3] + "..."
-                return f"{p1}{p2_trunc}{p3_trunc}"
-
-            return (f"{p1}{p2_trunc}")[:100]
-
-        # For other errors, just truncate the end
-        return full_msg[:97] + "..."
-
-
-# --- CONFIGURATION ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# --- Load configuration from environment variables ---
-TR_HOST = os.environ.get("TR_HOST", "localhost")
-TR_PORT = int(os.environ.get("TR_PORT", 9091))
-TR_USER = os.environ.get("TR_USER")
-TR_PASS = os.environ.get("TR_PASS")
-
-GLUETUN_HOST = os.environ.get("GLUETUN_HOST", "localhost")
-GLUETUN_PORT = int(os.environ.get("GLUETUN_PORT", 8000))
-GLUETUN_USER = os.environ.get("GLUETUN_USER")
-GLUETUN_PASS = os.environ.get("GLUETUN_PASS")
-
-HC_URL = os.environ.get("HC_URL")
-CHECK_INTERVAL_SECONDS = int(os.environ.get("CHECK_INTERVAL_SECONDS", 300)) # Default to 5 minutes
-
-# --- Validate that essential variables are set ---
-if not all([TR_USER, TR_PASS, GLUETUN_USER, GLUETUN_PASS, HC_URL]):
-    logging.error("FATAL: One or more essential environment variables are not set. Exiting.")
-    sys.exit(1)
-
-GLUETUN_BASE_URL = f"http://{GLUETUN_HOST}:{GLUETUN_PORT}"
-TR_RPC_URL = f"http://{TR_HOST}:{TR_PORT}/transmission/rpc"
-
-def ping_healthchecks(event: str, message: str = ""):
-    """Pings the Healthchecks.io endpoint with an event (start, success, fail)."""
-    try:
-        url = f"{HC_URL}/{event}" if event in ["start", "fail"] else HC_URL
-        requests.post(url, data=message.encode('utf-8'), timeout=10)
-    except requests.RequestException as e:
-        logging.warning(f"Could not ping Healthchecks.io: {e}")
-
-def get_transmission_session_id(session: requests.Session) -> str:
-    """Gets the X-Transmission-Session-Id header."""
-    try:
-        response = session.get(TR_RPC_URL, auth=(TR_USER, TR_PASS), timeout=5)
-    except requests.RequestException as e:
-        if isinstance(e, requests.exceptions.HTTPError) and e.response.status_code == 409:
-            return e.response.headers.get("X-Transmission-Session-Id")
-        raise ConnectionError(f"Failed to connect to Transmission to get session ID: {e}") from e
-
-    # This path is unexpected, but if the server returns 200 on first hit, handle it.
-    return response.headers.get("X-Transmission-Session-Id")
-
-def run_transmission_rpc(session: requests.Session, method: str, arguments: dict = None) -> dict:
-    """Runs a command on the Transmission RPC."""
-    if arguments is None:
-        arguments = {}
-    payload = {"method": method, "arguments": arguments}
-    
-    # Get session ID first time
-    if 'X-Transmission-Session-Id' not in session.headers:
-        session_id = get_transmission_session_id(session)
-        if not session_id:
-            raise ValueError("Could not retrieve Transmission Session ID.")
-        session.headers.update({"X-Transmission-Session-Id": session_id})
-
-    try:
-        response = session.post(TR_RPC_URL, json=payload, auth=(TR_USER, TR_PASS), timeout=10)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.HTTPError as e:
-        # Handle session ID conflict
-        if e.response.status_code == 409:
-            logging.info("Transmission session ID expired, renewing...")
-            session_id = e.response.headers.get("X-Transmission-Session-Id")
-            if not session_id:
-                 raise ValueError("Could not renew expired Transmission Session ID.")
-            session.headers.update({"X-Transmission-Session-Id": session_id})
-            
-            # Retry the request with the new session ID
-            response = session.post(TR_RPC_URL, json=payload, auth=(TR_USER, TR_PASS), timeout=10)
-            response.raise_for_status()
-            return response.json()
-        raise
-    except requests.RequestException as e:
-        raise ConnectionError(f"Transmission RPC call '{method}' failed: {e}") from e
-
-def check_external_port(port: int, retries: int = 3, delay: int = 5) -> tuple[str, dict]:
-    """Checks the port status using the external service, with retries. Returns (status_bool, error_dict)."""
-    for attempt in range(retries):
+    def publish(self, phase, status, reason="", recoverable=False):
+        record = {
+            "schema": 1,
+            "updated_at": self.clock(),
+            "phase": phase,
+            "network_status": status,
+            "reason": reason[:100],
+            "recoverable": recoverable,
+            "gluetun_port": self.gluetun_port,
+            "transmission_port": self.transmission_port,
+            "external": self.external,
+            "last_vpn_cycle_at": self.last_cycle_at,
+        }
         try:
-            response = requests.get(
-                f"https://portcheck.transmissionbt.com/{port}",
-                timeout=(5, 15),  # (connect, read)
+            atomic_json(self.config.state_dir / "monitor.json", record)
+        except OSError as error:
+            LOG.error("Could not publish monitor state: %s", type(error).__name__)
+
+    def notify(self, event, message=""):
+        if not self.config.hc_url:
+            return
+        url = self.config.hc_url
+        if event in ("start", "fail"):
+            url += "/" + event
+        try:
+            response = self.http.post(url, data=message[:100].encode(), timeout=(3, 5))
+            response.raise_for_status()
+        except requests.RequestException as error:
+            # Request exceptions can contain the secret Healthchecks URL.
+            LOG.warning("Healthchecks delivery failed: %s", type(error).__name__)
+
+    def _api(self, path):
+        try:
+            response = self.http.get(
+                self.vpn_url + path,
+                auth=(self.config.gluetun_user, self.config.gluetun_pass),
+                timeout=(3, 5),
             )
             response.raise_for_status()
-            content = response.text.strip()
-            if content == "1":
-                return True, None
-            elif content == "0":
-                return False, None
-            else:
-                # Unexpected response, so we should probably not retry.
-                logging.error(f"Port check received unexpected response: {content}")
-                return None, {'error': 'E:PORTCHECK_UNEXPECTED_RESP', 'content': content}
-        except requests.RequestException as e:
-            logging.warning(f"Port check attempt {attempt + 1}/{retries} failed: {e}")
-            if attempt < retries - 1:
-                time.sleep(delay)
-            else:
-                # This was the last attempt
-                return None, {'error': 'E:PORTCHECK_DOWN', 'exception': type(e).__name__}
+            return response.json()
+        except requests.HTTPError as error:
+            if error.response is not None and error.response.status_code in (401, 403):
+                raise Fault("CONFIG_ERROR", "Gluetun API denied credentials") from error
+            raise Fault("API_UNREACHABLE", "Gluetun API returned an error", True) from error
+        except (requests.RequestException, ValueError, TypeError) as error:
+            raise Fault("API_UNREACHABLE", "Gluetun API did not respond correctly", True) from error
+
+    def vpn_status(self):
+        data = self._api("/v1/vpn/status")
+        status = data.get("status") if isinstance(data, dict) else None
+        if status not in ("running", "stopped", "starting", "stopping"):
+            raise Fault("CONFIG_ERROR", "Invalid Gluetun VPN status")
+        return status
+
+    def forward(self):
+        data = self._api("/v1/portforward")
+        port = data.get("port") if isinstance(data, dict) else None
+        if not valid_port(port, allow_zero=True):
+            raise Fault("CONFIG_ERROR", "Invalid Gluetun forwarded port")
+        return port
+
+    def _rpc(self, method, arguments=None):
+        auth = (self.config.tr_user, self.config.tr_pass)
+        payload = {"method": method, "arguments": arguments or {}}
+        try:
+            if "X-Transmission-Session-Id" not in self.tr_http.headers:
+                response = self.tr_http.get(self.tr_url, auth=auth, timeout=(3, 5))
+                if response.status_code == 401:
+                    raise Fault("CONFIG_ERROR", "Transmission denied credentials")
+                token = response.headers.get("X-Transmission-Session-Id")
+                if not token:
+                    raise Fault("TR_UNREACHABLE", "Transmission session token missing", True)
+                self.tr_http.headers["X-Transmission-Session-Id"] = token
+            for attempt in range(2):
+                response = self.tr_http.post(self.tr_url, json=payload, auth=auth, timeout=(3, 20))
+                if response.status_code == 409 and attempt == 0:
+                    token = response.headers.get("X-Transmission-Session-Id")
+                    if not token:
+                        raise Fault("TR_UNREACHABLE", "Transmission session token missing", True)
+                    self.tr_http.headers["X-Transmission-Session-Id"] = token
+                    continue
+                if response.status_code in (401, 403):
+                    raise Fault("CONFIG_ERROR", "Transmission denied credentials")
+                response.raise_for_status()
+                body = response.json()
+                if not isinstance(body, dict) or body.get("result") != "success":
+                    raise Fault("TR_UNREACHABLE", "Transmission RPC rejected request", True)
+                return body.get("arguments", {})
+            raise Fault("TR_UNREACHABLE", "Transmission session token expired", True)
+        except Fault:
+            raise
+        except (requests.RequestException, ValueError, TypeError) as error:
+            self.tr_http.headers.pop("X-Transmission-Session-Id", None)
+            raise Fault("TR_UNREACHABLE", "Transmission RPC unavailable", True) from error
+
+    def _port(self):
+        value = self._rpc("session-get", {"fields": ["peer-port"]}).get("peer-port")
+        if not valid_port(value):
+            raise Fault("CONFIG_ERROR", "Invalid Transmission peer port")
+        return value
+
+    def _external(self, port):
+        for attempt in range(3):
+            try:
+                response = self.http.get(f"{PORT_CHECK_URL}/{port}", timeout=(5, 15))
+                response.raise_for_status()
+                result = response.text.strip()
+                if result == "1":
+                    return "open"
+                if result == "0":
+                    return "closed"
+                return "unknown"
+            except requests.RequestException:
+                if attempt < 2:
+                    self.sleep(5)
+        return "unknown"
+
+    def _cooldown_record(self):
+        path = self.config.state_dir / "vpn-recovery.json"
+        try:
+            with path.open(encoding="utf-8") as input_file:
+                record = json.load(input_file)
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError) as error:
+            raise Fault("STATE_ERROR", "VPN cooldown state unreadable") from error
+        timestamp = record.get("last_vpn_cycle_at") if isinstance(record, dict) else None
+        if type(timestamp) not in (float, int) or timestamp < 0:
+            raise Fault("STATE_ERROR", "VPN cooldown state invalid")
+        return timestamp
+
+    def _cycle_allowed(self):
+        previous = self._cooldown_record()
+        if previous is None:
+            return True
+        self.last_cycle_at = previous
+        now = self.clock()
+        if previous > now:
+            # A backward clock correction must not disable recovery indefinitely.
+            self._record_cycle(now)
+            return False
+        elapsed = now - previous
+        return elapsed >= self.config.cooldown
+
+    def _record_cycle(self, timestamp=None):
+        timestamp = self.clock() if timestamp is None else timestamp
+        try:
+            atomic_json(self.config.state_dir / "vpn-recovery.json", {
+                "last_vpn_cycle_at": timestamp
+            })
+        except OSError as error:
+            raise Fault("STATE_ERROR", "Cannot save VPN recovery cooldown") from error
+        self.last_cycle_at = timestamp
+
+    def _put_vpn(self, desired, deadline):
+        remaining = deadline - self.monotonic()
+        if remaining <= 0:
+            raise Fault("RECOVERY_FAILED", "VPN transition timed out", True)
+        try:
+            response = self.http.put(
+                self.vpn_url + "/v1/vpn/status",
+                json={"status": desired},
+                auth=(self.config.gluetun_user, self.config.gluetun_pass),
+                timeout=(min(3, remaining), min(10, remaining)),
+            )
+            response.raise_for_status()
+            outcome = response.json()
+            if not isinstance(outcome, dict) or not isinstance(outcome.get("outcome"), str):
+                raise Fault("RECOVERY_FAILED", "VPN transition reply invalid", True)
+        except requests.HTTPError as error:
+            if error.response is not None and error.response.status_code in (401, 403):
+                raise Fault("CONFIG_ERROR", "Gluetun API denied recovery request") from error
+            raise Fault("RECOVERY_FAILED", "VPN transition rejected", True) from error
+        except (requests.RequestException, ValueError, TypeError) as error:
+            raise Fault("RECOVERY_FAILED", "VPN transition request failed", True) from error
+
+    def _wait_vpn(self, desired, deadline):
+        while self.monotonic() < deadline:
+            if self.vpn_status() == desired:
+                return
+            self.sleep(min(3, max(0, deadline - self.monotonic())))
+        raise Fault("RECOVERY_FAILED", f"VPN did not reach {desired}", True)
+
+    def _ensure_running(self, deadline, start_only=False):
+        status = self.vpn_status()
+        if status == "running":
+            return False
+        if status == "stopping":
+            self._wait_vpn("stopped", deadline)
+            status = "stopped"
+        if status == "stopped":
+            if start_only and self.monotonic() - self.last_start_attempt < 60:
+                return False
+            self.last_start_attempt = self.monotonic()
+            if start_only:
+                LOG.warning("VPN_START_ATTEMPT status=stopped")
+            self._put_vpn("running", deadline)
+        self._wait_vpn("running", deadline)
+        return True
+
+    def _cycle_vpn(self):
+        if not self._cycle_allowed():
+            LOG.info("VPN_CYCLE_COOLDOWN last_at=%.0f", self.last_cycle_at)
+            return "VPN_CYCLE_COOLDOWN"
+        self._record_cycle()  # A crash after this point still enforces cooldown.
+        deadline = self.monotonic() + self.config.recovery_timeout
+        stop_deadline = min(deadline - 60, self.monotonic() + 60)
+        self.publish("recovering", "RECOVERY_PENDING", "VPN_CYCLE", True)
+        LOG.warning("VPN_CYCLE_START port=%s last_at=%.0f", self.gluetun_port, self.last_cycle_at)
+        stop_attempted = False
+        primary_error = None
+        try:
+            stop_attempted = True
+            self._put_vpn("stopped", stop_deadline)
+            self._wait_vpn("stopped", stop_deadline)
+        except Fault as error:
+            primary_error = error
+        finally:
+            if stop_attempted:
+                try:
+                    self._ensure_running(deadline)
+                except Fault as error:
+                    primary_error = error
+        if primary_error:
+            raise primary_error
+        self.grace_until = self.monotonic() + self.config.grace
+        LOG.warning("VPN_CYCLE_COMPLETE awaiting_forward_verification")
+        return "VPN_CYCLE_ATTEMPTED"
+
+    def _reconcile_port(self, port):
+        original = self.transmission_port
+        LOG.warning("PORT_REPAIR_START old=%s new=%s", original, port)
+        for _ in range(2):
+            current = self.forward()
+            if current != port or current == 0:
+                raise Fault("MISMATCH", "Gluetun port changed during update", True)
+            self._rpc("session-set", {"peer-port": port})
+            self.transmission_port = self._port()
+            if self.transmission_port == port:
+                LOG.info("PORT_REPAIR_VERIFIED old=%s new=%s", original, port)
+                return
+        raise Fault("MISMATCH", "Transmission did not adopt forwarded port", True)
+
+    def check(self):
+        self.gluetun_port = self.transmission_port = None
+        self.external = "not_checked"
+        self.publish("checking", "PENDING")
+        self.notify("start")
+        status = "PENDING"
+        reason = ""
+        recoverable = False
+        try:
+            status, reason, recoverable = self._check_network()
+        except Fault as error:
+            status, reason, recoverable = error.code, error.detail, error.recoverable
+            self.zero_count = self.closed_count = 0
+        except Exception as error:
+            status, reason, recoverable = "MONITOR_ERROR", type(error).__name__, True
+            self.zero_count = self.closed_count = 0
+            LOG.exception("Unexpected monitor failure")
+        self.publish("complete", status, reason, recoverable)
+        summary = f"{status} {reason}".strip()
+        if status == "HEALTHY":
+            if self.last_status != "HEALTHY":
+                LOG.info("VERIFIED_HEALTHY port=%s peer=%s external=%s %s",
+                         self.gluetun_port, self.transmission_port, self.external, reason)
+            self.notify("success", summary)
+        else:
+            LOG.error(summary)
+            self.notify("fail", summary)
+        self.last_status = status
+        return status
+
+    def _check_network(self):
+        c = self.config
+        self.last_cycle_at = self._cooldown_record()
+        vpn = self.vpn_status()
+        if vpn != "running":
+            self.zero_count = self.closed_count = 0
+            if vpn == "stopped" and c.recovery_enabled:
+                self.publish("recovering", "RECOVERY_PENDING", "VPN_START", True)
+                started = self._ensure_running(self.monotonic() + c.recovery_timeout, start_only=True)
+                if started:
+                    self.grace_until = self.monotonic() + c.grace
+                return "VPN_DOWN", "VPN_START_ATTEMPTED" if started else "VPN_START_WAIT", True
+            return "VPN_DOWN", f"VPN_{vpn.upper()}", True
+        port = self.forward()
+        self.gluetun_port = port
+        in_grace = self.monotonic() < self.grace_until
+        if port == 0:
+            self.closed_count = 0
+            if not in_grace:
+                self.zero_count += 1
+            if c.recovery_enabled and self.zero_count >= c.zero_threshold:
+                self.zero_count = 0
+                return "NO_PORT", self._cycle_vpn(), True
+            return "NO_PORT", f"ZERO_COUNT_{self.zero_count}", True
+
+        self.zero_count = 0
+        self.transmission_port = self._port()
+        changed = False
+        if self.transmission_port != port:
+            self.closed_count = 0
+            if not c.recovery_enabled:
+                return "MISMATCH", "RECOVERY_DISABLED", True
+            self._reconcile_port(port)
+            changed = True
+        self.external = self._external(port)
+        if self.external == "unknown":
+            self.closed_count = 0
+            return "PORTCHECK_UNKNOWN", "External checker unavailable", False
+        if self.external == "closed":
+            if self.closed_port != port:
+                self.closed_count = 0
+            self.closed_port = port
+            if not changed and not in_grace:
+                self.closed_count += 1
+            if c.recovery_enabled and self.closed_count >= c.closed_threshold:
+                self.closed_count = 0
+                return "CLOSED", self._cycle_vpn(), True
+            return "CLOSED", f"CLOSED_COUNT_{self.closed_count}", True
+        self.closed_count = 0
+        stats = self._rpc("session-stats")
+        torrents = self._rpc("torrent-get", {"fields": ["id", "name", "error", "errorString"]})
+        errors = [item for item in torrents.get("torrents", []) if item.get("error") == 3]
+        if errors:
+            return "SYS_ERR", f"TORRENT_ID_{errors[0].get('id')}", False
+        return "HEALTHY", f"PORT_{port} ACTIVE_{stats.get('activeTorrentCount', 0)}", False
+
+    def run_forever(self):
+        while True:
+            self.check()
+            self.sleep(self.config.interval)
+
 
 def main():
-    """Main checking logic."""
-    tr_session = requests.Session()
-    
-    while True:
-        ping_healthchecks("start")
-        diagnostic_context = "No Additional Info"
-        
-        try:
-            # 1. Get Gluetun data
-            gluetun_auth = (GLUETUN_USER, GLUETUN_PASS)
-            gluetun_port_resp = requests.get(f"{GLUETUN_BASE_URL}/v1/portforward", auth=gluetun_auth, timeout=5)
-            gluetun_port_resp.raise_for_status()
-            gluetun_port_data = gluetun_port_resp.json()
-            
-            gluetun_vpn_resp = requests.get(f"{GLUETUN_BASE_URL}/v1/vpn/status", auth=gluetun_auth, timeout=5)
-            gluetun_vpn_resp.raise_for_status()
-            gluetun_vpn_data = gluetun_vpn_resp.json()
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    try:
+        config = Config.from_env()
+    except (ValueError, TypeError) as error:
+        LOG.error("Invalid monitor configuration: %s", error)
+        raise SystemExit(1) from error
+    LOG.info("MONITOR_START code_sha256=%s interval=%s recovery_enabled=%s",
+             hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+             config.interval, config.recovery_enabled)
+    Monitor(config).run_forever()
 
-            gluetun_port = gluetun_port_data.get("port")
-            gluetun_vpn_status = gluetun_vpn_data.get("status")
-
-            if not all([gluetun_port, gluetun_vpn_status]):
-                raise HealthcheckError("E:GLUETUN_PARSE | Missing 'port' or 'status' in Gluetun API response")
-
-            # 2. Get Transmission data
-            session_data = run_transmission_rpc(tr_session, "session-get", {"fields": ["peer-port"]})
-            session_stats = run_transmission_rpc(tr_session, "session-stats")
-            torrents_data = run_transmission_rpc(tr_session, "torrent-get", {"fields": ["id", "name", "error", "errorString"]})
-
-            transmission_port = session_data.get("arguments", {}).get("peer-port")
-            stats_args = session_stats.get("arguments", {})
-            active_count = stats_args.get("activeTorrentCount", "N/A")
-            dl_speed = stats_args.get("downloadSpeed", "N/A")
-            ul_speed = stats_args.get("uploadSpeed", "N/A")
-
-            if transmission_port is None:
-                raise HealthcheckError("E:TR_PARSE | Missing 'peer-port' in Transmission session data")
-                
-            system_error_torrents = [t for t in torrents_data.get("arguments", {}).get("torrents", []) if t.get("error") == 3]
-            system_error_count = len(system_error_torrents)
-
-            # 3. Check external port
-            port_status_bool, port_check_error = check_external_port(transmission_port)
-
-            # 4. Build diagnostic context and perform checks
-            port_status_str = "OPEN" if port_status_bool else "CLOSED"
-            diagnostic_context = f"P:{transmission_port}({port_status_str}) VPN:{gluetun_vpn_status} | DL/UL:{dl_speed}/{ul_speed} | Act:{active_count}"
-
-            if port_check_error:
-                raise HealthcheckError(
-                    port_check_error['error'],
-                    diag_context=diagnostic_context,
-                    portcheck_error=port_check_error
-                )
-            
-            if gluetun_port != transmission_port:
-                raise HealthcheckError("E:MISMATCH", diag_context=diagnostic_context, mismatch_ports={'gluetun': gluetun_port, 'transmission': transmission_port})
-
-            if not port_status_bool:
-                raise HealthcheckError("E:CLOSED", diagnostic_context)
-
-            if system_error_count > 0:
-                raise HealthcheckError("E:SYS_ERR", diag_context=diagnostic_context, torrent=system_error_torrents[0])
-
-            # 5. Success
-            logging.info(f"OK | {diagnostic_context}")
-            ping_healthchecks("success", f"OK | {diagnostic_context}")
-
-        except HealthcheckError as e:
-            logging.error(e.full_message)
-            ping_healthchecks("fail", e.hc_message)
-            # Reset session on failure in case of persistent connection/session issues
-            tr_session = requests.Session()
-        except Exception as e:
-            error_message = str(e)
-            logging.error(error_message)
-            # For unexpected errors, perform a simple truncation for the healthcheck ping
-            ping_healthchecks("fail", error_message[:100])
-            # Reset session on failure in case of persistent connection/session issues
-            tr_session = requests.Session()
-
-        finally:
-            logging.info(f"Check finished. Waiting {CHECK_INTERVAL_SECONDS} seconds...")
-            time.sleep(CHECK_INTERVAL_SECONDS)
 
 if __name__ == "__main__":
     main()

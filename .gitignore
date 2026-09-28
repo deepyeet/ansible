@@ -67,3 +67,5 @@ Temporary Items
 
 .gemini/
 .vault_pass
+__pycache__/
+*.pyc

@@ -1,0 +1,54 @@
+---
+- name: Check whether torrent recovery timer is active
+  ansible.builtin.command: systemctl is-active --quiet torrenter-recovery.timer
+  register: torrenter_timer_active
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Stop recovery timer during deployment
+  ansible.builtin.systemd_service:
+    name: torrenter-recovery.timer
+    state: stopped
+  when: not ansible_check_mode and torrenter_timer_active.rc == 0
+
+- name: Wait for any active stack recovery to finish before deployment
+  ansible.builtin.command: systemctl show --property=ActiveState --value torrenter-recovery.service
+  register: torrenter_service_active
+  changed_when: false
+  failed_when: false
+  until: torrenter_service_active.rc == 0 and torrenter_service_active.stdout in ['inactive', 'failed']
+  retries: 65
+  delay: 10
+  when: not ansible_check_mode
+
+- name: Verify stack recovery is no longer active
+  ansible.builtin.assert:
+    that:
+      - torrenter_service_active.rc == 0
+      - torrenter_service_active.stdout in ['inactive', 'failed']
+    fail_msg: The active torrent recovery service did not finish before deployment.
+  when: not ansible_check_mode
+
+- name: Track whether torrent deployment succeeds
+  ansible.builtin.set_fact:
+    torrenter_deploy_succeeded: false
+
+- name: Deploy and verify the torrent application
+  block:
+    - name: Deploy Docker stack
+      ansible.builtin.include_tasks: docker_stack.yml
+
+    - name: Install host recovery timer
+      ansible.builtin.include_tasks: recovery.yml
+
+    - name: Mark torrent deployment successful
+      ansible.builtin.set_fact:
+        torrenter_deploy_succeeded: true
+  always:
+    - name: Restore desired recovery timer state
+      ansible.builtin.systemd_service:
+        name: torrenter-recovery.timer
+        enabled: "{{ torrenter_recovery_enabled and (torrenter_deploy_succeeded or torrenter_timer_active.rc == 0) }}"
+        state: "{{ 'started' if (torrenter_recovery_enabled and (torrenter_deploy_succeeded or torrenter_timer_active.rc == 0)) else 'stopped' }}"
+      when: not ansible_check_mode and (torrenter_deploy_succeeded or torrenter_timer_active.rc == 0)

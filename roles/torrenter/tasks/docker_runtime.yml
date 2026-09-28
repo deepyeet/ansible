@@ -1,0 +1,113 @@
+---
+- name: Validate rendered Docker Compose configuration
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - -f
+      - "/home/{{ ansible_user }}/ansible_docker/transmission/compose.yaml"
+      - config
+      - --quiet
+  changed_when: false
+
+- name: Check running Gluetun image
+  ansible.builtin.command:
+    argv: [docker, inspect, --format, "{{ '{{.Config.Image}}' }}", gluetun]
+  register: running_gluetun_image
+  changed_when: false
+  failed_when: false
+
+- name: Check running monitor code
+  ansible.builtin.command:
+    argv: [docker, exec, transmission-healthcheck, sha256sum, /app/check.py]
+  register: running_monitor_hash
+  changed_when: false
+  failed_when: false
+
+- name: Inspect network namespaces of existing torrent services
+  ansible.builtin.command:
+    argv: [docker, inspect, --format, "{{ '{{.State.Pid}}' }}", "{{ item }}"]
+  loop:
+    - gluetun
+    - transmission
+    - transmission-healthcheck
+    - mam-updater
+    - ptp-archiver
+  register: torrenter_running_pids
+  changed_when: false
+  failed_when: false
+
+- name: Read existing torrent service network namespaces
+  ansible.builtin.command:
+    argv: [readlink, "/proc/{{ item.stdout }}/ns/net"]
+  loop: "{{ torrenter_running_pids.results }}"
+  when: item.rc == 0 and (item.stdout | int) > 0
+  register: torrenter_running_namespaces
+  changed_when: false
+  failed_when: false
+
+- name: Decide which services need recreation
+  ansible.builtin.set_fact:
+    torrenter_namespace_recreate: >-
+      {{ running_gluetun_image.rc != 0
+         or running_gluetun_image.stdout != 'qmcgaw/gluetun:' ~ torrenter_gluetun_version
+         or gluetun_auth_template.changed
+         or docker_compose_template.changed
+         or docker_env_template.changed
+         or (torrenter_running_pids.results | selectattr('rc', 'ne', 0) | list | length > 0)
+         or (torrenter_running_namespaces.results | selectattr('rc', 'defined') | selectattr('rc', 'ne', 0) | list | length > 0)
+         or (torrenter_running_namespaces.results | selectattr('stdout', 'defined') | map(attribute='stdout') | unique | list | length != 1) }}
+    torrenter_monitor_recreate: >-
+      {{ running_monitor_hash.rc != 0
+         or running_monitor_hash.stdout.split(' ')[0] != (lookup('file', role_path ~ '/files/transmission-healthcheck/check.py', rstrip=false) | hash('sha256')) }}
+
+- name: Apply torrent stack with bounded startup recovery
+  block:
+    - name: Update torrent containers
+      ansible.builtin.include_tasks: docker_apply.yml
+  rescue:
+    - name: Attempt to restore torrent services after deployment failure
+      ansible.builtin.command:
+        argv: [docker, compose, -f, "/home/{{ ansible_user }}/ansible_docker/transmission/compose.yaml", up, -d, --no-deps, --no-build, --pull, never, gluetun, transmission, transmission-healthcheck, mam-updater, ptp-archiver]
+      register: torrenter_restore_result
+      failed_when: false
+    - name: Report torrent deployment failure after attempted restoration
+      ansible.builtin.fail:
+        msg: "Torrent deployment failed; attempted to restore all namespace services (restore rc={{ torrenter_restore_result.rc }})."
+
+- name: Read deployed monitor code hash
+  ansible.builtin.command:
+    argv: [docker, exec, transmission-healthcheck, sha256sum, /app/check.py]
+  register: deployed_monitor_hash
+  changed_when: false
+
+- name: Verify running monitor contains intended code
+  ansible.builtin.assert:
+    that:
+      - deployed_monitor_hash.stdout.split(' ')[0] == (lookup('file', role_path ~ '/files/transmission-healthcheck/check.py', rstrip=false) | hash('sha256'))
+    fail_msg: The running Transmission monitor does not contain the intended check.py.
+
+- name: Inspect deployed torrent service process IDs
+  ansible.builtin.command:
+    argv: [docker, inspect, --format, "{{ '{{.State.Pid}}' }}", "{{ item }}"]
+  loop:
+    - gluetun
+    - transmission
+    - transmission-healthcheck
+    - mam-updater
+    - ptp-archiver
+  register: deployed_torrenter_pids
+  changed_when: false
+
+- name: Inspect deployed torrent service network namespaces
+  ansible.builtin.command:
+    argv: [readlink, "/proc/{{ item.stdout }}/ns/net"]
+  loop: "{{ deployed_torrenter_pids.results }}"
+  register: deployed_torrenter_namespaces
+  changed_when: false
+
+- name: Verify torrent services share Gluetun's network namespace
+  ansible.builtin.assert:
+    that:
+      - deployed_torrenter_namespaces.results | map(attribute='stdout') | unique | list | length == 1
+    fail_msg: One or more torrent services are attached to the wrong network namespace.

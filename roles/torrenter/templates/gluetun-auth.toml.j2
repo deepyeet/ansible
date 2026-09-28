@@ -1,0 +1,6 @@
+[[roles]]
+name = "transmission-monitor"
+routes = ["GET /v1/portforward", "GET /v1/vpn/status", "PUT /v1/vpn/status"]
+auth = "basic"
+username = {{ GLUETUN_USER | to_json }}
+password = {{ GLUETUN_PASS | to_json }}
