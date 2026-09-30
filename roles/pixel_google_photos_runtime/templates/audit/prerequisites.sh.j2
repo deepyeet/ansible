@@ -1,0 +1,57 @@
+#!/system/bin/sh
+# Read only. Never enter the Photos UI, request permissions, unlock, or mount.
+set -eu
+emit() {
+    key=$1; shift
+    printf '%s: ' "$key"
+    if "$@" >/dev/null 2>&1; then echo true; else echo false; fi
+}
+for x in blkid stat readlink awk grep cut tr sed sort cat ps pidof nohup dd df wc tail sleep date dumpsys wm settings cmd input sendevent am; do
+    emit "command_$x" command -v "$x"
+done
+# Live scan, as used by farm-startup.sh. Do not rely on a remembered sdX name.
+devices=$(blkid | awk -v uuid={{ ('UUID="' + pixel_runtime_config.drive_uuid + '"') | quote }} '
+    { for (i=2; i<=NF; i++) if ($i == uuid) print }')
+matches=$(printf '%s\n' "$devices" | awk 'NF {n++} END {print n+0}')
+printf 'drive_matches: %s\n' "$matches"
+emit drive_is_ext4 test "$(printf '%s\n' "$devices" | grep -c 'TYPE="ext4"' || true)" = 1
+device=$(printf '%s\n' "$devices" | cut -d: -f1)
+emit drive_is_block_device test -b "$device"
+# dumpsys user output is reduced to a boolean; account names are not emitted.
+user_state=$(dumpsys user)
+emit primary_user_unlocked test "$(printf '%s\n' "$user_state" | awk '
+    /UserInfo\{0:/ {primary=1; next}
+    /UserInfo\{/ {primary=0}
+    primary && /State: RUNNING_UNLOCKED/ {print "yes"; exit}')" = yes
+enabled_packages=$(cmd package list packages -e --user 0 com.google.android.apps.photos)
+emit photos_enabled test "$enabled_packages" = package:com.google.android.apps.photos
+photos_activity=$(cmd package resolve-activity --brief --user 0 -n com.google.android.apps.photos/.home.HomeActivity)
+emit photos_home_activity test "$(printf '%s\n' "$photos_activity" | tail -n 1)" = com.google.android.apps.photos/.home.HomeActivity
+# Stream this large dump: Android's external printf can exceed ARG_MAX if the
+# full package dump is stored in a shell variable. Ignore the factory APK and
+# other Android users; only user 0 of the active package counts.
+dumpsys package com.google.android.apps.photos | awk '
+    /Hidden system packages:/ {hidden=1}
+    /User 0:/ {primary=1; next}
+    /User [1-9][0-9]*:/ {primary=0}
+    !hidden && primary && /android.permission.READ_EXTERNAL_STORAGE: granted=true/ {r=1}
+    !hidden && primary && /android.permission.WRITE_EXTERNAL_STORAGE: granted=true/ {w=1}
+    END {
+        print "photos_can_read_storage: " (r ? "true" : "false")
+        print "photos_can_write_storage: " (w ? "true" : "false")
+    }'
+keyguard=$(dumpsys window policy | grep -oE 'secure=(true|false)' | sort -u)
+emit keyguard_has_no_credential test "$keyguard" = secure=false
+emit screen_size_matches test "$(wm size | tail -n 1 | awk '{print $NF}')" = {{ pixel_runtime_config.screen_size | quote }}
+emit screen_density_matches test "$(wm density | tail -n 1 | awk '{print $NF}')" = {{ pixel_runtime_config.screen_density | string | quote }}
+emit rotation_locked_portrait test "$(settings get system accelerometer_rotation):$(settings get system user_rotation)" = 0:0
+emit power_input_present test -c {{ pixel_runtime_config.power_event | quote }}
+emit touch_input_present test -c {{ pixel_runtime_config.touch_event | quote }}
+emit power_input_matches test "$(cat /sys/class/input/{{ pixel_runtime_config.power_event | basename }}/device/name 2>/dev/null || true)" = {{ pixel_runtime_config.power_device_name | quote }}
+emit touch_input_matches test "$(cat /sys/class/input/{{ pixel_runtime_config.touch_event | basename }}/device/name 2>/dev/null || true)" = {{ pixel_runtime_config.touch_device_name | quote }}
+emit health_curl_available test -x /system/bin/curl
+battery=$(dumpsys battery)
+emit battery_level_available test "$(printf '%s\n' "$battery" | grep -cE '^ *level: [0-9]+$' || true)" = 1
+emit battery_temperature_available test "$(printf '%s\n' "$battery" | grep -cE '^ *temperature: [0-9]+$' || true)" = 1
+emit kernel_panic_control_available test -r /proc/sys/kernel/panic
+emit kernel_softlockup_control_available test -r /proc/sys/kernel/softlockup_panic

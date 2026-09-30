@@ -1,0 +1,82 @@
+---
+# May run on a fresh SSH-able phone: deliberately independent of source manifests.
+- name: Keep storage prerequisite inspection read-only and unelevated
+  ansible.builtin.assert:
+    that:
+      - photo_backup_operation | default('audit') == 'audit'
+      - not (ansible_become | default(false) | bool)
+    quiet: true
+
+- name: Read Android kernel, Magisk boot integration and SSH dependencies
+  ansible.builtin.raw: "{{ lookup('ansible.builtin.file', role_path + '/files/prerequisites.sh') }}"
+  register: pbg_prerequisites
+  become: false
+  check_mode: false
+  changed_when: false
+
+- name: Explain the platform requirements of the captured storage helpers
+  vars:
+    storage: '{{ pbg_prerequisites.stdout | from_yaml }}'
+  block:
+    - name: Require the rooted Android 10 Pixel storage model
+      ansible.builtin.assert:
+        that:
+          - storage.root_shell
+          - storage.android_10
+          - storage.original_pixel
+          - storage.boot_completed
+          - storage.ext4_supported
+          - storage.sdcardfs_supported
+        quiet: true
+        fail_msg: >-
+          This captured ext4 helper requires an original Pixel on Android 10,
+          root, a completed boot, and kernel ext4/sdcardfs support. A different
+          Android storage implementation needs a separately reviewed role.
+
+    - name: Require mounts made by this SSH shell to be visible globally
+      ansible.builtin.assert:
+        that: storage.global_mount_namespace
+        quiet: true
+        fail_msg: >-
+          The SSH shell is outside PID 1's mount namespace. Upstream's
+          start_global_shell.sh enters it with nsenter; this audit will not.
+          Resolve the shell namespace before any future storage activation.
+
+    - name: Require Magisk and the enabled SSH module to survive the next boot
+      ansible.builtin.assert:
+        that:
+          - storage.magisk_available
+          - storage.magisk_busybox_available
+          - storage.ssh_module_installed
+          - storage.ssh_module_enabled
+          - storage.ssh_module_kept
+          - storage.ssh_overlay_enabled
+          - storage.ssh_boot_service_present
+          - storage.ssh_autostart_enabled
+          - storage.ssh_binary_available
+          - storage.rsync_binary_available
+        quiet: true
+        fail_msg: >-
+          Check the manually installed Magisk SSH module and its disable/remove/
+          skip_mount flags, service.sh, and /data/ssh/no-autostart. An open SSH
+          session alone does not establish that SSH will return after a reboot.
+
+    - name: Require persistent root SSH authorization without reading key contents
+      ansible.builtin.assert:
+        that:
+          - storage.ssh_authorized_keys_present
+          - storage.ssh_authorized_keys_private
+        quiet: true
+        fail_msg: >-
+          Magisk SSH needs /data/ssh/root/.ssh/authorized_keys owned by root:root,
+          mode 600. Both the operator and NAS admin need authorization after a
+          reset. This check does not establish which public keys are authorized.
+
+    - name: Require each command used by the storage helpers and source audit
+      ansible.builtin.assert:
+        that: item.value
+        quiet: true
+        fail_msg: 'Missing {{ item.key }}; the captured storage helper cannot run with this shell PATH.'
+      loop: "{{ storage | dict2items | selectattr('key', 'match', '^command_') | list }}"
+      loop_control:
+        label: '{{ item.key }}'

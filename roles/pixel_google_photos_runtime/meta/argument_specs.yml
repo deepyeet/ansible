@@ -28,7 +28,7 @@ argument_specs:
           mode:
             type: str
             required: true
-      pixel_runtime_config:
+      pixel_runtime_config: &runtime_config
         type: dict
         required: true
         options:
@@ -48,6 +48,18 @@ argument_specs:
             type: str
             required: true
           touch_event:
+            type: str
+            required: true
+          screen_size:
+            type: str
+            required: true
+          screen_density:
+            type: int
+            required: true
+          power_device_name:
+            type: str
+            required: true
+          touch_device_name:
             type: str
             required: true
           lookup_retries:
@@ -111,3 +123,7 @@ argument_specs:
   validate:
     short_description: Validate source inputs and rendering on the controller only
     options: *adoption_options
+  prerequisites:
+    short_description: Inspect drive identity and Photos setup without installed farm scripts
+    options:
+      pixel_runtime_config: *runtime_config

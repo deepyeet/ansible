@@ -1,0 +1,27 @@
+---
+# Runs after the operator prepares Android/Magisk/SSH, including after a reset.
+# Does not require the captured helper files, an existing mount, or health tokens.
+# Unlike the adoption play, passing this play does NOT mean the farm is installed.
+- name: Explain whether the Pixel platform is ready for photo backup setup
+  hosts: photo_receivers
+  gather_facts: false
+  become: false
+  any_errors_fatal: true
+  tasks:
+    - name: Inspect the Android storage and Magisk SSH prerequisites
+      ansible.builtin.include_role:
+        name: pixel_backup_gang
+        tasks_from: prerequisites
+        public: false
+    - name: Inspect the attached drive and Google Photos prerequisites
+      ansible.builtin.include_role:
+        name: pixel_google_photos_runtime
+        tasks_from: prerequisites
+        public: false
+    - name: Describe the remaining installation boundary
+      ansible.builtin.debug:
+        msg: >-
+          Machine-checkable prerequisites passed. No scripts or drive markers
+          were installed and no mount or app action was performed. Follow the
+          recovery sequence in playbooks/PHOTO_BACKUP.md; Photos account,
+          folder backup, staging exclusion and cleanup still require inspection.

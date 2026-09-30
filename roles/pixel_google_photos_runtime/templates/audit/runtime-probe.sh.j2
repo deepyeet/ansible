@@ -1,12 +1,68 @@
-#!/bin/sh
-# Missing runtime state is an observation, never an instruction to repair it.
+#!/system/bin/sh
+# Inspect installed state. Never run farm-startup, mount helpers or UI cleanup.
 set -eu
-if [ -f /sdcard/the_binding/.mount_check ]; then
-  echo CANARY_PRESENT
-else
-  echo CANARY_MISSING
+emit() {
+    key=$1; shift
+    printf '%s: ' "$key"
+    if "$@" >/dev/null 2>&1; then echo true; else echo false; fi
+}
+drive={{ pixel_runtime_config.drive_mount | quote }}
+root=/storage/emulated/0/the_binding
+binding=/mnt/runtime/write/emulated/0/the_binding
+uuid={{ ('UUID="' + pixel_runtime_config.drive_uuid + '"') | quote }}
+device=$(blkid | awk -v uuid="$uuid" '{for (i=2;i<=NF;i++) if ($i==uuid) {sub(/:$/, "", $1); print $1}}')
+
+# Match BOTH the mount point and source. A canary on internal storage is unsafe.
+emit external_ext4_mounted awk -v drive="$drive" -v device="$device" '
+    $5==drive && $4=="/" && $6 ~ /(^|,)rw(,|$)/ {
+        for (i=7;i<=NF;i++) if ($i=="-" && $(i+1)=="ext4" && $(i+2)==device) n++
+    } END {exit n!=1}' /proc/1/mountinfo
+
+sdcard_mount() {
+    awk -v target="$1" -v source="$drive/the_binding" '
+        $5==target && $4=="/" && $6 ~ /(^|,)rw(,|$)/ {
+            for (i=7;i<=NF;i++) if ($i=="-" && $(i+1)=="sdcardfs" && $(i+2)==source) n++
+        } END {exit n!=1}' "$2"
+}
+emit android_write_binding sdcard_mount "$binding" /proc/1/mountinfo
+emit android_shared_storage sdcard_mount "$root" /proc/1/mountinfo
+emit nas_storage_alias test "$(readlink -f /sdcard)" = /storage/emulated/0
+emit legacy_selinux_policy test "$(getenforce)" = Permissive
+emit external_canary_regular test -f "$drive/the_binding/.mount_check"
+emit external_canary_not_symlink test ! -L "$drive/the_binding/.mount_check"
+emit shared_canary_regular test -f "$root/.mount_check"
+emit shared_canary_not_symlink test ! -L "$root/.mount_check"
+external_inode=$(stat -c %i "$drive/the_binding/.mount_check" 2>/dev/null || true)
+shared_inode=$(stat -c %i "$root/.mount_check" 2>/dev/null || true)
+emit canary_inode_matches test "${external_inode:-missing-external}" = "${shared_inode:-missing-shared}"
+emit staging_directory test -d "$root/.staging"
+emit incoming_directory test -d "$root/incoming"
+emit staging_not_symlink test ! -L "$root/.staging"
+emit incoming_not_symlink test ! -L "$root/incoming"
+root_device=$(stat -c %d "$root" 2>/dev/null || true)
+staging_device=$(stat -c %d "$root/.staging" 2>/dev/null || true)
+incoming_device=$(stat -c %d "$root/incoming" 2>/dev/null || true)
+emit staging_on_receiver_filesystem test "${root_device:-missing-root}" = "${staging_device:-missing-staging}"
+emit incoming_on_receiver_filesystem test "${root_device:-missing-root}" = "${incoming_device:-missing-incoming}"
+# This is evidence, not a claim about Photos' scanning behavior.
+emit staging_nomedia_present test -f "$root/.staging/.nomedia"
+emit incoming_not_excluded test ! -e "$root/incoming/.nomedia"
+emit receiver_not_excluded test ! -e "$root/.nomedia"
+
+pids=$(pidof com.google.android.apps.photos || true)
+visible=false
+if [ -n "$pids" ]; then
+    visible=true
+    for pid in $pids; do
+        if ! sdcard_mount "$root" "/proc/$pid/mountinfo"; then visible=false; fi
+    done
 fi
-awk -v drive={{ pixel_runtime_config.drive_mount | quote }} '$5 == drive || $5 == "/storage/emulated/0/the_binding" {print}' /proc/1/mountinfo
-ps -A -o PID,ARGS | awk -v watchdog={{ (pixel_runtime_config.scripts_dir + '/watchdog_runner.sh') | quote }} -v health={{ (pixel_runtime_config.scripts_dir + '/pixel_health.sh') | quote }} '$NF == watchdog || $NF == health {print "WORKER", $1, $NF}'
-echo 'SOURCE_MATCH_ONLY: mount and process observations do not prove cloud backup'
-echo 'UNVERIFIED: Photos staging exclusion and cleanup correctness'
+printf 'photos_process_sees_drive: %s\n' "$visible"
+processes=$(ps -A -o PID,ARGS)
+printf '%s\n' "$processes" | awk \
+    -v watchdog={{ (pixel_runtime_config.scripts_dir + '/watchdog_runner.sh') | quote }} \
+    -v health={{ (pixel_runtime_config.scripts_dir + '/pixel_health.sh') | quote }} '
+    $NF==watchdog {w++} $NF==health {h++}
+    END {printf "watchdog_processes: %d\nhealth_processes: %d\n",w,h}'
+emit panic_delay_matches test "$(cat /proc/sys/kernel/panic)" = {{ pixel_runtime_config.panic_delay | string | quote }}
+emit softlockup_policy_matches test "$(cat /proc/sys/kernel/softlockup_panic)" = {{ pixel_runtime_config.softlockup_panic | string | quote }}

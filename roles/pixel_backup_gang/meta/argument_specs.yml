@@ -44,3 +44,6 @@ argument_specs:
   validate:
     short_description: Validate source inputs and rendering on the controller only
     options: *adoption_options
+  prerequisites:
+    short_description: Inspect Android and Magisk before any helper files are installed
+    options: {}

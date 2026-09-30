@@ -1,11 +1,85 @@
 ---
-- name: Read mount and worker observations without running the runtime
+- name: Read mount sources, canaries, Photos namespace and worker processes
   ansible.builtin.raw: "{{ lookup('ansible.builtin.template', 'audit/runtime-probe.sh.j2') }}"
   register: pixel_runtime_observation
   become: false
   check_mode: false
   changed_when: false
 
-- name: Report observations without inferring cloud upload completion
-  ansible.builtin.debug:
-    msg: '{{ pixel_runtime_observation.stdout_lines }}'
+- name: Explain the installed farm's operating requirements
+  vars:
+    farm: '{{ pixel_runtime_observation.stdout | from_yaml }}'
+  block:
+    - name: Require the configured external drive behind both Android mount paths
+      ansible.builtin.assert:
+        that:
+          - farm.external_ext4_mounted
+          - farm.android_write_binding
+          - farm.android_shared_storage
+          - farm.nas_storage_alias
+          - farm.legacy_selinux_policy
+        quiet: true
+        fail_msg: >-
+          The expected ext4 -> sdcardfs mount chain is incomplete or this legacy
+          installation's SELinux state has changed. Read the boot log and recovery
+          runbook. Do not rerun the mount helper blindly: it changes permissions
+          recursively and disables SELinux enforcement.
+
+    - name: Require the drive canary to refer to the same file through shared storage
+      ansible.builtin.assert:
+        that:
+          - farm.external_canary_regular
+          - farm.external_canary_not_symlink
+          - farm.shared_canary_regular
+          - farm.shared_canary_not_symlink
+          - farm.canary_inode_matches
+        quiet: true
+        fail_msg: >-
+          The canary guards against NAS writes to internal phone storage. It must
+          be a real file on the verified external mount and appear through the
+          Android binding. The captured scripts do not create it. Never create
+          /sdcard/the_binding/.mount_check merely to silence this failure.
+
+    - name: Require staging and incoming directories on the same mounted filesystem
+      ansible.builtin.assert:
+        that:
+          - farm.staging_directory
+          - farm.incoming_directory
+          - farm.staging_not_symlink
+          - farm.incoming_not_symlink
+          - farm.staging_on_receiver_filesystem
+          - farm.incoming_on_receiver_filesystem
+          - farm.incoming_not_excluded
+          - farm.receiver_not_excluded
+        quiet: true
+        fail_msg: >-
+          NAS transfer requires .staging and incoming on this drive so promotion
+          uses a same-filesystem rename. A .nomedia in incoming or the receiver
+          root would conflict with scanning completed photos. This audit does
+          not establish whether Photos actually excludes the hidden staging folder.
+
+    - name: Require Photos to see the drive and exactly one copy of each farm worker
+      ansible.builtin.assert:
+        that:
+          - farm.photos_process_sees_drive
+          - farm.watchdog_processes == 1
+          - farm.health_processes == 1
+          - farm.panic_delay_matches
+          - farm.softlockup_policy_matches
+        quiet: true
+        fail_msg: >-
+          Farm startup has not established the expected runtime, or workers are
+          duplicated. Inspect the startup log before a separately planned
+          activation. A process may still be hung; existence does not prove
+          progress, delivered health pings, or completed cloud uploads.
+
+    - name: Report the remaining limits of machine inspection
+      ansible.builtin.debug:
+        msg:
+          staging_nomedia_present: '{{ farm.staging_nomedia_present }}'
+          manual_verification:
+            - Photos account, Original quality entitlement and incoming folder backup
+            - Photos must ignore partial files in .staging
+            - Current Photos menus must match reset_and_free.sh coordinates
+            - Cleanup must remove only backed-up files; NAS infers completion from absence
+            - NAS admin SSH authorization and Healthchecks dashboard grace periods

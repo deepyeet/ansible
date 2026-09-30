@@ -7,6 +7,13 @@
     quiet: true
 - name: Validate the implementation inputs
   ansible.builtin.import_tasks: validate_config.yml
+- name: Require an explicit health URL without printing or contacting it
+  ansible.builtin.assert:
+    that:
+      - pixel_runtime_healthcheck_url is match('^https://[A-Za-z0-9./_-]+$')
+    quiet: true
+  no_log: true
+  diff: false
 - name: Require the complete reviewed source manifest
   ansible.builtin.assert:
     that:

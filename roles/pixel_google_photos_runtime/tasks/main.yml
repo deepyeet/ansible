@@ -2,7 +2,9 @@
 # This entry point can only inspect. Bootstrap is a separate future batch.
 - name: Validate explicit inputs and exact rendering before connecting
   ansible.builtin.import_tasks: validate.yml
+- name: Require drive, Photos and UI setup before inspecting the installed farm
+  ansible.builtin.import_tasks: prerequisites.yml
 - name: Read source fingerprints and fail on drift
   ansible.builtin.import_tasks: inspect.yml
-- name: Observe implementation prerequisites without executing helpers
+- name: Require the installed mount chain and farm workers without activating them
   ansible.builtin.import_tasks: observe.yml
