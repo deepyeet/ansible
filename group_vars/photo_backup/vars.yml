@@ -1,0 +1,16 @@
+---
+# Single source of truth for controller-to-receiver connections. Each host occurs
+# in one pipeline; the play finds the controller's edge and resolves its receiver.
+photo_pipelines:
+  family_photos:
+    controller: ds223j
+    receiver: pixel1
+
+photo_backup_operation: audit
+ansible_connection: ssh
+ansible_become: false
+# Reuse the operator's existing authenticated masters; do not prompt for login.
+ansible_ssh_args: >-
+  -o ControlMaster=auto -o ControlPersist=60s
+  -o ControlPath=~/.ssh/sockets/%r@%h:%p
+  -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes

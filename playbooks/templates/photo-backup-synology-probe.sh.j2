@@ -1,0 +1,21 @@
+#!/bin/sh
+# Read-only DSM adapter. Never invoke --run, sudo, the manager or its SSH key.
+set -eu
+id {{ synology_photo_backup.owner | quote }} >/dev/null || exit 41
+for x in bash flock rsync ssh curl find md5sum sha256sum stat; do
+  command -v "$x" >/dev/null || exit 42
+done
+grep -Fq {{ (synology_photo_backup.volume.source + ' ' + synology_photo_backup.volume.path + ' ' + synology_photo_backup.volume.fstype + ' ') | quote }} /proc/mounts || exit 43
+for p in {{ [photo_ingest.state_dir, photo_ingest.base_dir, photo_ingest.base_dir + '/0_Inbox', photo_ingest.base_dir + '/1_Queue', photo_ingest.base_dir + '/2_Uploading', photo_ingest.base_dir + '/3_Done'] | map('quote') | join(' ') }}
+do
+  [ ! -L "$p" ] && [ -d "$p" ] || exit 44
+done
+t=$(/usr/syno/bin/synoschedtask --get id={{ synology_photo_backup.schedule.task_id }} 2>&1) || :
+{% for expected in ['Name: [' + synology_photo_backup.schedule.name + ']', 'State: [enabled]', 'Owner: [' + synology_photo_backup.owner + ']', 'Repeat every [5] min (s) until [23]:[55]', 'Run time: [0]:[0]', 'Command: [bash ' + photo_ingest.state_dir + '/pixel_manager.sh]'] %}
+printf '%s\n' "$t" | grep -Fq {{ expected | quote }} || exit 45
+{% endfor %}
+echo PREREQUISITES_OK
+echo 'TASK_DEFINITION_MATCH: enabled admin task every five minutes'
+echo 'UNKNOWN: authenticated sudo entitlement and admin SSH key/trust have not been verified'
+echo 'UNKNOWN: privileged task execution status is not accessible as the SSH login account'
+echo 'SOURCE_MATCH_ONLY: complete privileged adoption is not asserted'

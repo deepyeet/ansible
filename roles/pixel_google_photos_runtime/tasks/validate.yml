@@ -1,0 +1,52 @@
+---
+- name: Require the read-only adoption entry point
+  ansible.builtin.assert:
+    that:
+    - photo_backup_operation | default('audit') == 'audit'
+    - not (ansible_become | default(false) | bool)
+    quiet: true
+- name: Validate the implementation inputs
+  ansible.builtin.import_tasks: validate_config.yml
+- name: Require the complete reviewed source manifest
+  ansible.builtin.assert:
+    that:
+    - pixel_runtime_adoption_sources is sequence
+    - pixel_runtime_adoption_sources is not string
+    - pixel_runtime_adoption_sources | length == pixel_runtime_source_layout | length
+    - pixel_runtime_adoption_sources | map(attribute='template') | list | sort == pixel_runtime_source_layout.keys()
+      | list | sort
+    - pixel_runtime_adoption_sources | map(attribute='dest') | unique | length == pixel_runtime_adoption_sources
+      | length
+    quiet: true
+    fail_msg: Missing, duplicate or incomplete adoption baseline; do not infer a fresh host.
+- name: Validate each source path and immutable fingerprint
+  ansible.builtin.assert:
+    that:
+    - item.dest == pixel_runtime_source_layout[item.template]
+    - item.dest is match('^/[A-Za-z0-9_./-]+$')
+    - "'..' not in item.dest.split('/')"
+    - "'.' not in item.dest.split('/')"
+    - "'//' not in item.dest"
+    - item.sha256 is match('^[a-f0-9]{64}$')
+    - item.uid is integer
+    - item.gid is integer
+    - item.uid >= 0
+    - item.gid >= 0
+    - item.mode is match('^[0-7]{3,4}$')
+    - not item.mode.startswith('0')
+    quiet: true
+    fail_msg: Adoption manifest is outside the declared package or has an invalid fingerprint.
+  loop: '{{ pixel_runtime_adoption_sources }}'
+  loop_control:
+    label: '{{ item.dest }}'
+- name: Require rendered bytes to match the captured baseline
+  ansible.builtin.assert:
+    that:
+    - lookup('ansible.builtin.template', item.template, rstrip=False) | hash('sha256') == item.sha256
+    quiet: true
+    fail_msg: Rendered source differs from the immutable baseline; no remote repair is permitted.
+  loop: '{{ pixel_runtime_adoption_sources }}'
+  loop_control:
+    label: '{{ item.dest }}'
+  no_log: true
+  diff: false

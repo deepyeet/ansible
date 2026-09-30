@@ -1,0 +1,156 @@
+#!/system/bin/sh
+
+# --- CONFIG ---
+PBG_DIR="{{ pixel_runtime_config.scripts_dir }}"
+UUID_FILE="my_drive_id.txt"
+LOG="{{ pixel_runtime_config.log_path }}"
+
+# Setup Env
+export PATH=/sbin:/system/sbin:/system/bin:/system/xbin:$PATH
+cd "$PBG_DIR" || exit 1
+
+# Truncate log on boot start to prevent infinite growth
+echo "--- DEBUG BOOT START: $(date) ---" > "$LOG"
+
+# 1. INSPECT THE UUID FILE
+if [ -f "$UUID_FILE" ]; then
+    # Sanitize immediately: Remove all whitespace/newlines
+    TARGET_UUID=$(cat "$UUID_FILE" | tr -d '[:space:]')
+    echo "[DEBUG] Target UUID: '$TARGET_UUID'" >> "$LOG"
+else
+    echo "CRITICAL: UUID File missing at $PBG_DIR/$UUID_FILE" >> "$LOG"
+    exit 1
+fi
+
+# 2. WAIT FOR BOOT
+while [ "$(getprop sys.boot_completed)" != "1" ]; do
+  sleep 1
+done
+echo "[DEBUG] Boot completed." >> "$LOG"
+
+# ----------------------------------------------------------------
+# 3. DEVICE HUNT (Live Probe - Fixes Cache Issue)
+# ----------------------------------------------------------------
+DEVICE=""
+RETRIES=0
+MAX_RETRIES={{ pixel_runtime_config.lookup_retries }}
+TARGET_UUID=$(cat "$UUID_FILE" | tr -d '[:space:]')
+
+echo "[DEBUG] Hunting for UUID: '$TARGET_UUID'" >> "$LOG"
+
+while [ -z "$DEVICE" ]; do
+  # Running blkid with NO arguments forces a live hardware scan.
+  # We grep the output manually to bypass stale cache files.
+  MATCH=$(blkid | grep "$TARGET_UUID")
+
+  if [ -n "$MATCH" ]; then
+    DEVICE=$(echo "$MATCH" | cut -d: -f1)
+    echo "[DEBUG] Resolved Device: $DEVICE" >> "$LOG"
+    break
+  fi
+
+  sleep {{ pixel_runtime_config.lookup_sleep }}
+  RETRIES=$((RETRIES+1))
+
+  if [ $RETRIES -gt $MAX_RETRIES ]; then
+    echo "CRITICAL: Timed out waiting for drive." >> "$LOG"
+    exit 1
+  fi
+done
+
+# ----------------------------------------------------------------
+# 4. MOUNT
+# ----------------------------------------------------------------
+echo "[DEBUG] Attempting mount on $DEVICE..." >> "$LOG"
+sh ./mount_ext4.sh "$DEVICE" >> "$LOG" 2>&1
+if [ $? -ne 0 ]; then
+    echo "[FAILURE] Mount script returned error" >> "$LOG"
+    exit 1
+fi
+
+# ----------------------------------------------------------------
+# 5. UI LAUNCH
+# ----------------------------------------------------------------
+echo "[DEBUG] Launching UI..." >> "$LOG"
+input keyevent 82
+sleep 1
+am force-stop com.google.android.apps.photos
+am start -n com.google.android.apps.photos/.home.HomeActivity
+
+# ----------------------------------------------------------------
+# 6. PERMANENT INSOMNIA (Fixed: Writes standalone script)
+# ----------------------------------------------------------------
+echo "[DEBUG] Deploying Watchdog..." >> "$LOG"
+
+# We write the watchdog logic to a real file so nohup can find it
+WD_SCRIPT="${PBG_DIR}/watchdog_runner.sh"
+
+cat > "$WD_SCRIPT" <<EOF
+#!/system/bin/sh
+DEVICE="$DEVICE"
+TARGET_UUID="$TARGET_UUID"
+LOG="$LOG"
+
+echo "[WATCHDOG] Started monitoring \$DEVICE" >> "\$LOG"
+
+while true; do
+    # 1. Force "on" for all USB devices
+    for ctrl in /sys/bus/usb/devices/*/power/control; do
+        if [ -f "\$ctrl" ] && grep -q "auto" "\$ctrl"; then
+            echo "on" > "\$ctrl"
+        fi
+    done
+
+    # 2. Kill autosuspend timers
+    for susp in /sys/bus/usb/devices/*/power/autosuspend; do
+        if [ -f "\$susp" ]; then
+            CURRENT_VAL=\$(cat "\$susp")
+            if [ "\$CURRENT_VAL" != "-1" ]; then
+                echo -1 > "\$susp"
+            fi
+        fi
+    done
+
+    # Only write if we see the canary file, ensuring we hit the external drive.
+    if [ -f "{{ pixel_runtime_config.drive_mount }}/the_binding/.mount_check" ]; then
+        dd if=/dev/zero of="{{ pixel_runtime_config.drive_mount }}/the_binding/.keepalive" bs=1024 count=1 conv=fsync >/dev/null 2>&1
+    else
+        # Optional: Log that the mount is missing, but don't panic yet (let the hardware check decide)
+        echo "WARN: Mount canary missing. Skipping heartbeat write." >> "$LOG"
+    fi
+
+    # 4. Hardware Check
+    if [ ! -b "\$DEVICE" ]; then
+        echo "[CRITICAL] Hardware Lost: \$DEVICE is missing." >> "\$LOG"
+        
+        # Check if it renamed itself
+        NEW_LOC=\$(blkid | grep "\$TARGET_UUID" | cut -d: -f1)
+        
+        if [ -n "\$NEW_LOC" ]; then
+             echo "[WARN] Drive renamed to \$NEW_LOC. Rebooting." >> "\$LOG"
+        else
+             echo "[FATAL] Drive vanished. Hub crash suspected." >> "\$LOG"
+        fi
+        reboot
+    fi
+
+    sleep {{ pixel_runtime_config.watchdog_interval }}
+done
+EOF
+
+# Make executable and run in background detached
+chmod +x "$WD_SCRIPT"
+nohup "$WD_SCRIPT" >> "$LOG" 2>&1 &
+
+echo "[SUCCESS] Watchdog deployed to background." >> "$LOG"
+
+echo {{ pixel_runtime_config.panic_delay }} > /proc/sys/kernel/panic
+echo {{ pixel_runtime_config.softlockup_panic }} > /proc/sys/kernel/softlockup_panic
+echo "[SUCCESS] Kernel panic settings configured." >> "$LOG"
+
+# HEALTHCHECKS
+HEALTH_SCRIPT="{{ pixel_runtime_config.scripts_dir }}/pixel_health.sh"
+nohup "$HEALTH_SCRIPT" >> "$LOG" 2>&1 &
+echo "[SUCCESS] Health monitor deployed." >> "$LOG"
+
+echo "--- END LOG (Success) ---" >> "$LOG"

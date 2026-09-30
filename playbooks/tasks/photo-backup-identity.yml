@@ -1,0 +1,14 @@
+---
+- name: Read the effective UID without escalation or module staging
+  ansible.builtin.raw: id -u
+  register: photo_observed_identity
+  become: false
+  check_mode: false
+  changed_when: false
+
+- name: Require the captured management identity
+  ansible.builtin.assert:
+    that:
+      - photo_observed_identity.stdout | trim == photo_adoption_identity.uid | string
+    quiet: true
+    fail_msg: SSH identity differs from the reviewed host baseline; no repair performed.

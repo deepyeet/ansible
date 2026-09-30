@@ -1,0 +1,393 @@
+"""Adoption acceptance on local fixtures. SSH is replaced by a failing stub."""
+import hashlib
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[2]
+# Ansible's controller scratch must stay outside the repository and SSH homes.
+os.environ.setdefault('ANSIBLE_LOCAL_TEMP', '/tmp/codex-photo-test-ansible')
+from ansible.parsing.dataloader import DataLoader
+from ansible.parsing.vault import VaultLib, VaultSecret
+from ansible.template import Templar
+
+ROLES = {
+    'pixel_backup_gang': 'pbg',
+    'pixel_google_photos_runtime': 'pixel_runtime',
+    'photo_ingest_controller': 'photo_ingest',
+}
+
+
+def read_yaml(path):
+    return yaml.safe_load((ROOT / path).read_text())
+
+
+def render(path, variables):
+    """Use installed Ansible templating for the actual read-only probe source."""
+    return Templar(loader=DataLoader(), variables=variables).template(
+        (ROOT / path).read_text(), preserve_trailing_newlines=True)
+
+
+class LocalPlayTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='photo-adoption-', dir='/tmp')
+        self.addCleanup(self.tmp.cleanup)
+        self.work = Path(self.tmp.name)
+        self.calls = self.work / 'ssh-calls'
+        stub = self.work / 'ssh-unavailable'
+        stub.write_text('#!/bin/sh\nprintf "UNEXPECTED_SSH\\n" >> "$PHOTO_TEST_SSH_CALLS"\nexit 78\n')
+        stub.chmod(0o700)
+        self.env = dict(os.environ, ANSIBLE_CONFIG=str(ROOT / 'ansible.cfg'),
+                        ANSIBLE_SSH_EXECUTABLE=str(stub),
+                        PHOTO_TEST_SSH_CALLS=str(self.calls), ANSIBLE_NOCOLOR='1',
+                        ANSIBLE_DISPLAY_ARGS_TO_STDOUT='false')
+        self.env.pop('ANSIBLE_LOG_PATH', None)
+
+    def run_play(self, extras=None, limit=None, play='playbooks/photo-backup.yml',
+                 extra_args=(), inventory=None):
+        args = ['ansible-playbook', play]
+        if extras is not None:
+            path = self.work / 'extra.yml'
+            path.write_text(yaml.safe_dump(extras))
+            args.extend(['-e', '@' + str(path)])
+        if inventory is not None:
+            path = self.work / 'inventory.yml'
+            path.write_text(yaml.safe_dump(inventory))
+            args.extend(['-i', str(path)])
+        if limit:
+            args.extend(['--limit', limit])
+        result = subprocess.run(args + list(extra_args), cwd=ROOT, env=self.env,
+                                capture_output=True, text=True, timeout=60)
+        self.assertFalse(self.calls.exists(), 'A local/negative case attempted SSH')
+        return result
+
+    def rejected(self, extras, limit=None):
+        result = self.run_play(extras, limit=limit)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn('failed=1', result.stdout)
+
+    def test_current_manifests_render_exactly_without_ssh(self):
+        result = self.run_play(play='playbooks/photo-backup-validate.yml')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count('changed=0'), 2)
+        vault = VaultLib([(None, VaultSecret((ROOT / '.vault_pass').read_bytes().strip()))])
+        # Ansible reports absolute controller task paths. A local checkout may
+        # happen to live under the same account name as the vaulted SSH login.
+        reported = (result.stdout + result.stderr).replace(str(ROOT), '<repository>')
+        for path in ['group_vars/all/vault.yml', 'group_vars/photo_receivers/vault.yml',
+                     'group_vars/photo_controllers/vault.yml']:
+            values = yaml.safe_load(vault.decrypt((ROOT / path).read_bytes()))
+            for value in values.values():
+                self.assertTrue(not value or value not in reported,
+                                'Vault value appeared in local validation output')
+
+    def test_non_audit_operations_fail_before_ssh(self):
+        for value in ['bootstrap', 'provision', 'install']:
+            with self.subTest(operation=value):
+                self.rejected({'photo_backup_operation': value})
+
+    def test_inventory_become_override_fails_before_ssh(self):
+        self.rejected({'ansible_become': True})
+
+    def test_parameter_drift_fails_before_any_host_connects(self):
+        config = read_yaml('host_vars/pixel1/vars.yml')
+        config['pixel_runtime_config']['health_interval'] += 1
+        self.rejected(config)
+
+    def test_controller_parameter_drift_fails_before_pixel_connects(self):
+        config = read_yaml('host_vars/ds223j/vars.yml')
+        config['photo_ingest']['ingest_age'] += 1
+        self.rejected(config)
+
+    def test_absent_or_incomplete_baseline_fails_before_ssh(self):
+        self.rejected({'photo_adoption_sources': {}}, limit='pixel1')
+        baseline = read_yaml('host_vars/pixel1/adoption.yml')
+        baseline['photo_adoption_sources']['pixel_backup_gang'].pop()
+        self.rejected(baseline, limit='pixel1')
+
+    def test_unsafe_or_undeclared_manifest_paths_fail_before_ssh(self):
+        for path in ['/tmp/other.sh', '/data/local/tmp/../unexpected',
+                     '/data/local/tmp/bad;command']:
+            with self.subTest(path=path):
+                baseline = read_yaml('host_vars/pixel1/adoption.yml')
+                baseline['photo_adoption_sources']['pixel_backup_gang'][0]['dest'] = path
+                self.rejected(baseline, limit='pixel1')
+
+    def test_missing_peer_fails_with_receiver_only_limit(self):
+        self.rejected({'photo_pipelines': {'family_photos': {
+            'controller': 'ds223j', 'receiver': 'missing'}}}, limit='pixel1')
+
+    def test_controller_only_limit_checks_pixel_contract(self):
+        config = read_yaml('host_vars/pixel1/vars.yml')
+        config['photo_receiver']['root'] = '/wrong/root'
+        self.rejected(config, limit='ds223j')
+
+    def test_receiver_only_limit_checks_cleanup_coherence(self):
+        config = read_yaml('host_vars/pixel1/vars.yml')
+        config['photo_receiver']['cleanup_argv'] = ['/other/cleanup']
+        self.rejected(config, limit='pixel1')
+
+    def test_incompatible_protocol_or_completion_fail_before_ssh(self):
+        for key, value in [('protocol', 'http_api'), ('completion', 'cloud_receipt')]:
+            config = read_yaml('host_vars/pixel1/vars.yml')
+            config['photo_receiver'][key] = value
+            self.rejected(config)
+
+    def test_pipeline_name_can_change_without_a_host_backreference(self):
+        result = self.run_play({'photo_pipelines': {
+            'renamed_pipeline': {'controller': 'ds223j', 'receiver': 'pixel1'}}},
+            play='playbooks/photo-backup-validate.yml')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_controller_cannot_belong_to_two_pipelines(self):
+        result = self.run_play({'photo_pipelines': {
+            'first': {'controller': 'ds223j', 'receiver': 'pixel1'},
+            'second': {'controller': 'ds223j', 'receiver': 'another_phone'}}})
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("map(attribute='controller') | unique", result.stdout)
+
+    def test_direct_runtime_inputs_must_agree_with_storage(self):
+        for field, value in [('scripts_dir', '/data/local/tmp/other'),
+                             ('drive_mount', '/mnt/other')]:
+            with self.subTest(field=field):
+                config = read_yaml('host_vars/pixel1/vars.yml')
+                config['pixel_runtime_config'][field] = value
+                self.rejected(config, limit='ds223j')
+
+    def test_shared_receiver_and_undeclared_controller_are_rejected(self):
+        for add_pipeline in [False, True]:
+            inventory = read_yaml('inventory.yml')
+            # The temporary inventory has no adjacent group_vars/host_vars.
+            # Supply nonsecret declarations so this exercises topology itself.
+            photo_group = inventory['all']['children']['photo_backup']
+            photo_group['vars'] = read_yaml('group_vars/photo_backup/vars.yml')
+            pixel_host = photo_group['children']['photo_receivers']['hosts']['pixel1']
+            pixel_host.update(read_yaml('host_vars/pixel1/vars.yml'))
+            pixel_host.update(read_yaml('host_vars/pixel1/adoption.yml'))
+            group = inventory['all']['children']['photo_backup']['children']['photo_controllers']
+            group['hosts']['another_nas'] = {'ansible_host': '192.0.2.10'}
+            extras = None
+            if add_pipeline:
+                extras = {'photo_pipelines': {
+                    'family_photos': {'controller': 'ds223j', 'receiver': 'pixel1'},
+                    'another_pipeline': {'controller': 'another_nas', 'receiver': 'pixel1'}}}
+            result = self.run_play(extras, limit='pixel1', inventory=inventory)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertIn('Require one controller and receiver per pipeline', result.stdout)
+            self.assertIn('evaluated_to', result.stdout)
+
+    def test_missing_secret_fails_locally_and_suppresses_value(self):
+        result = self.run_play({'vault_pixel_backup_healthcheck_url': ''}, limit='pixel1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('censored', result.stdout)
+
+    def test_site_limit_excludes_existing_media_and_wsl_hosts(self):
+        result = self.run_play(play='site.yml', limit='photo_backup', extra_args=['--list-hosts'])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('pi4_2020', result.stdout)
+        self.assertNotIn('jujupc', result.stdout)
+        self.assertIn('pixel1', result.stdout)
+        self.assertIn('ds223j', result.stdout)
+
+    def test_alternate_endpoint_reuses_actual_controller_template(self):
+        vars_ = {'photo_ingest': {
+                     'base_dir': '/srv/photos', 'state_dir': '/srv/backup',
+                     'ssh_key_path': '/srv/backup/key', 'ingest_age': 4,
+                     'ingest_min_date': '2020-01-01', 'rsync_timeout': 60,
+                     'cleanup_interval': 28800},
+                 'photo_ingest_endpoint': {
+                     'protocol': 'rsync_drop_v1', 'address': '192.0.2.20',
+                     'root': '/media/photo_drop', 'ssh_user': 'backup', 'ssh_port': 2222,
+                     'completion': 'local_absence_after_cleanup',
+                     'cleanup_argv': ['/opt/uploader/cleanup']},
+                 'photo_ingest_healthcheck_url': 'https://example.invalid/fixture-health'}
+        source = render('roles/photo_ingest_controller/templates/pixel_manager.sh.j2', vars_)
+        for text in ['PIXEL_IP="192.0.2.20"', 'PIXEL_ROOT="/media/photo_drop"',
+                     'backup@$PIXEL_IP', 'ssh -p 2222', '$SSH_CMD "/opt/uploader/cleanup"']:
+            self.assertIn(text, source)
+        self.assertNotIn('root@$PIXEL_IP', source)
+        self.assertNotIn('reset_and_free.sh', source)
+
+
+class ReadOnlyProbeTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='photo-source-probe-', dir='/tmp')
+        self.addCleanup(self.tmp.cleanup)
+        self.work = Path(self.tmp.name)
+        self.source = self.work / 'sample.sh'
+        self.source.write_bytes(b'captured fixture\n')
+        self.source.chmod(0o600)
+
+    def run_probe(self, role, prefix, path=None):
+        command = render(f'roles/{role}/templates/audit/source-probe.sh.j2', {
+            prefix + '_adoption_sources': [{'dest': str(path or self.source)}]})
+        return subprocess.run(['/bin/sh', '-s'], input=command, text=True,
+                              capture_output=True, timeout=5)
+
+    def test_all_role_probes_read_without_changing_bytes_metadata_or_directory(self):
+        expected = 'FILE|{}|{}|{}|{}|600'.format(
+            self.source, hashlib.sha256(self.source.read_bytes()).hexdigest(), os.getuid(), os.getgid())
+        before = self.source.stat()
+        for role, prefix in ROLES.items():
+            result = self.run_probe(role, prefix)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), expected)
+        after = self.source.stat()
+        fields = ['st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_ctime_ns', 'st_mtime_ns', 'st_size']
+        self.assertEqual([getattr(before, f) for f in fields], [getattr(after, f) for f in fields])
+        self.assertEqual(list(self.work.iterdir()), [self.source])
+
+    def test_missing_source_is_not_created(self):
+        for role, prefix in ROLES.items():
+            self.assertEqual(self.run_probe(role, prefix, self.work / 'absent').returncode, 33)
+        self.assertFalse((self.work / 'absent').exists())
+
+    def test_symlink_source_and_ancestor_are_rejected(self):
+        alias = self.work / 'alias'
+        alias.symlink_to(self.source)
+        directory_alias = self.work / 'directory-alias'
+        directory_alias.symlink_to(self.work, target_is_directory=True)
+        for role, prefix in ROLES.items():
+            self.assertEqual(self.run_probe(role, prefix, alias).returncode, 33)
+            self.assertEqual(self.run_probe(role, prefix, directory_alias / 'sample.sh').returncode, 32)
+
+    def test_drift_is_reported_without_normalizing_it(self):
+        self.source.write_bytes(b'changed fixture\n')
+        self.source.chmod(0o644)
+        for role, prefix in ROLES.items():
+            result = self.run_probe(role, prefix)
+            self.assertEqual(result.returncode, 0)
+            self.assertIn(hashlib.sha256(b'changed fixture\n').hexdigest(), result.stdout)
+            self.assertTrue(result.stdout.strip().endswith('|644'))
+        self.assertEqual(self.source.read_bytes(), b'changed fixture\n')
+        self.assertEqual(self.source.stat().st_mode & 0o777, 0o644)
+
+    def test_actual_role_assertions_reject_content_and_mode_drift_without_repair(self):
+        expected = {'dest': str(self.source), 'sha256': hashlib.sha256(b'captured fixture\n').hexdigest(),
+                    'uid': os.getuid(), 'gid': os.getgid(), 'mode': '600'}
+        for role, prefix in ROLES.items():
+            for drift in ['none', 'bytes', 'mode']:
+                with self.subTest(role=role, drift=drift):
+                    self.source.write_bytes(b'wrong\n' if drift == 'bytes' else b'captured fixture\n')
+                    self.source.chmod(0o644 if drift == 'mode' else 0o600)
+                    before = self.source.stat()
+                    play = [{'hosts': 'localhost', 'gather_facts': False, 'become': False,
+                             'vars': {'ansible_become': False, prefix + '_adoption_sources': [expected]},
+                             'tasks': [{'name': 'Exercise actual inspection on one disposable source',
+                                        'ansible.builtin.include_role': {
+                                            'name': role, 'tasks_from': 'inspect', 'public': False}}]}]
+                    path = self.work / 'inspect.yml'
+                    path.write_text(yaml.safe_dump(play))
+                    env = dict(os.environ, ANSIBLE_CONFIG=str(ROOT / 'ansible.cfg'))
+                    result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(path)],
+                                            cwd=ROOT, env=env, text=True, capture_output=True, timeout=30)
+                    self.assertEqual(result.returncode, 0 if drift == 'none' else 2,
+                                     result.stdout + result.stderr)
+                    after = self.source.stat()
+                    self.assertEqual((before.st_ino, before.st_mtime_ns, before.st_ctime_ns, before.st_mode),
+                                     (after.st_ino, after.st_mtime_ns, after.st_ctime_ns, after.st_mode))
+                    if drift != 'none':
+                        self.assertIn('Source or metadata drift detected', result.stdout)
+
+    def test_runtime_and_scheduler_probe_shell_syntax(self):
+        probes = [
+            ('roles/pixel_google_photos_runtime/templates/audit/runtime-probe.sh.j2',
+             read_yaml('host_vars/pixel1/vars.yml')),
+            ('playbooks/templates/photo-backup-synology-probe.sh.j2', read_yaml('host_vars/ds223j/vars.yml')),
+        ]
+        for path, variables in probes:
+            result = subprocess.run(['/bin/sh', '-n'], input=render(path, variables),
+                                    text=True, capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+
+class RepositoryContractTests(unittest.TestCase):
+    def test_local_and_live_entrypoints_are_literal_with_identical_role_inputs(self):
+        for component in ['receiver', 'controller']:
+            live = read_yaml(f'playbooks/tasks/photo-backup-{component}.yml')
+            local = read_yaml(f'playbooks/tasks/photo-backup-{component}-validate.yml')
+            self.assertEqual(len(live), len(local))
+            for before, after in zip(live, local):
+                if 'ansible.builtin.include_role' in before:
+                    self.assertEqual(before['ansible.builtin.include_role']['tasks_from'], 'main')
+                    self.assertEqual(after['ansible.builtin.include_role']['tasks_from'], 'validate')
+                    self.assertEqual(before['vars'], after['vars'])
+
+    def test_default_graph_has_only_controller_actions_and_readonly_raw(self):
+        allowed = {'assert', 'debug', 'include_role', 'include_tasks', 'import_tasks', 'raw'}
+
+        def walk(node):
+            if isinstance(node, list):
+                for value in node:
+                    walk(value)
+            elif isinstance(node, dict):
+                for key, value in node.items():
+                    if key.startswith('ansible.builtin.'):
+                        self.assertIn(key.split('.')[-1], allowed)
+                        if key == 'ansible.builtin.raw':
+                            self.assertIs(node['changed_when'], False)
+                            self.assertIs(node['check_mode'], False)
+                            self.assertIs(node['become'], False)
+                    walk(value)
+
+        paths = list((ROOT / 'playbooks/tasks').glob('photo-backup-*.yml'))
+        for role in ROLES:
+            paths.extend((ROOT / 'roles' / role / 'tasks').glob('*.yml'))
+            self.assertFalse(list((ROOT / 'roles' / role / 'handlers').glob('*')))
+        for path in paths:
+            walk(yaml.safe_load(path.read_text()))
+        for path in (ROOT / 'playbooks').glob('photo-backup*.yml'):
+            for play in yaml.safe_load(path.read_text()):
+                if 'hosts' in play:
+                    self.assertIs(play['gather_facts'], False)
+                    self.assertIs(play['become'], False)
+
+    def test_observation_shell_contains_no_mutation_or_network_commands(self):
+        paths = list((ROOT / 'playbooks/templates').glob('*probe*'))
+        for role in ROLES:
+            paths.extend((ROOT / 'roles' / role / 'templates/audit').glob('*.j2'))
+            paths.extend((ROOT / 'roles' / role / 'files').glob('*.sh'))
+        forbidden = ['chmod ', 'chown ', 'mkdir ', 'touch ', 'rm ', 'reboot',
+                     'curl -', 'rsync -', 'mount -', ' --run ', ' > /', ' >> ']
+        for path in paths:
+            # Comments can name forbidden actions while explaining the boundary.
+            code = '\n'.join(line for line in path.read_text().splitlines() if not line.startswith('#'))
+            for token in forbidden:
+                self.assertNotIn(token, code, str(path.relative_to(ROOT)))
+
+    def test_roles_have_no_host_fingerprints_or_peer_discovery(self):
+        for role in ROLES:
+            for path in (ROOT / 'roles' / role).rglob('*'):
+                if path.is_file():
+                    for token in ['192.168.1.160', '192.168.1.253', 'photo_pipeline_id',
+                                  'photo_adoption_sources', 'hostvars[']:
+                        self.assertNotIn(token, path.read_text(), str(path.relative_to(ROOT)))
+
+    def test_group_vaults_contain_only_their_health_url(self):
+        vault = VaultLib([(None, VaultSecret((ROOT / '.vault_pass').read_bytes().strip()))])
+        for group, key in [('photo_receivers', 'vault_pixel_backup_healthcheck_url'),
+                           ('photo_controllers', 'vault_synology_pixel_healthcheck_url')]:
+            content = (ROOT / 'group_vars' / group / 'vault.yml').read_bytes()
+            self.assertTrue(content.startswith(b'$ANSIBLE_VAULT;'))
+            values = yaml.safe_load(vault.decrypt(content))
+            self.assertEqual(set(values), {key})
+            # Exact values are covered by the source render checks. Never print them.
+            self.assertTrue(isinstance(values[key], str) and values[key].startswith('https://'))
+
+    def test_repository_contains_no_plaintext_health_tokens_or_personal_login(self):
+        vault = VaultLib([(None, VaultSecret((ROOT / '.vault_pass').read_bytes().strip()))])
+        login = yaml.safe_load(vault.decrypt((ROOT / 'group_vars/all/vault.yml').read_bytes()))['secret_unix_name'].encode()
+        result = subprocess.run(['rg', '--files', '--hidden', '-g', '!.git/**', '-g', '!.vault_pass',
+                                 '-g', '!**/__pycache__/**'], cwd=ROOT, capture_output=True, text=True, check=True)
+        for name in result.stdout.splitlines():
+            content = (ROOT / name).read_bytes()
+            self.assertNotRegex(content, rb'https://hc-ping\.com/[0-9a-fA-F-]{36}', name)
+            self.assertFalse(login in content, 'Plaintext login found in ' + name)
+
+
+if __name__ == '__main__':
+    unittest.main()

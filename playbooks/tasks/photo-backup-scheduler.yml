@@ -1,0 +1,18 @@
+---
+# DSM's UI owns the account, volumes and task. This adapter only asserts them.
+- name: Validate the manually configured DSM scheduler and volume
+  ansible.builtin.assert:
+    that:
+      - synology_photo_backup.owner == 'admin'
+      - synology_photo_backup.schedule.managed_by == 'dsm_ui'
+      - synology_photo_backup.schedule.task_id is integer
+      - synology_photo_backup.schedule.task_id > 0
+      - synology_photo_backup.schedule.interval_minutes == 5
+      - synology_photo_backup.schedule.name is match('^[A-Za-z0-9 _-]+$')
+      - synology_photo_backup.volume.fstype == 'btrfs'
+      - synology_photo_backup.volume.path is match('^/volume[0-9]+$')
+      - synology_photo_backup.volume.source is match('^/dev/[A-Za-z0-9_/-]+$')
+      - "'..' not in synology_photo_backup.volume.source.split('/')"
+      - photo_ingest.state_dir.startswith(synology_photo_backup.volume.path + '/')
+      - photo_ingest.base_dir.startswith(synology_photo_backup.volume.path + '/')
+    quiet: true

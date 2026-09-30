@@ -1,0 +1,15 @@
+#!/bin/sh
+# Only validated manifest paths are interpolated. No source content is printed.
+set -eu
+for p in {{ pbg_adoption_sources | map(attribute='dest') | map('quote') | join(' ') }}
+do
+  parent=${p%/*}
+  while [ -n "$parent" ] && [ "$parent" != / ]; do
+    [ ! -L "$parent" ] && [ -d "$parent" ] || { printf 'UNSAFE_PARENT|%s\n' "$parent"; exit 32; }
+    parent=${parent%/*}
+  done
+  [ ! -L "$p" ] && [ -f "$p" ] || { printf 'MISSING_OR_UNSAFE_SOURCE|%s\n' "$p"; exit 33; }
+  h=$(sha256sum "$p") || exit 34
+  m=$(stat -c '%u|%g|%a' "$p") || exit 35
+  printf 'FILE|%s|%s|%s\n' "$p" "${h%% *}" "$m"
+done

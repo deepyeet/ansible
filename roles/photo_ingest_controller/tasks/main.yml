@@ -1,0 +1,6 @@
+---
+# This entry point can only inspect. Bootstrap is a separate future batch.
+- name: Validate explicit inputs and exact rendering before connecting
+  ansible.builtin.import_tasks: validate.yml
+- name: Read source fingerprints and fail on drift
+  ansible.builtin.import_tasks: inspect.yml

@@ -1,0 +1,12 @@
+---
+- name: Inspect the supported Android and Magisk prerequisites
+  ansible.builtin.raw: "{{ lookup('ansible.builtin.file', role_path + '/files/prerequisites.sh') }}"
+  register: pbg_prerequisites
+  become: false
+  check_mode: false
+  changed_when: false
+- name: Require the observed Android storage capabilities
+  ansible.builtin.assert:
+    that:
+      - "'PREREQUISITES_OK' in pbg_prerequisites.stdout_lines"
+    quiet: true

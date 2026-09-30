@@ -1,0 +1,28 @@
+---
+# The default graph has only assertions, reads and reports. No bootstrap import.
+- name: Finish controller-side preflight before connecting to either machine
+  ansible.builtin.import_playbook: photo-backup-validate.yml
+
+- name: Inspect the declared photo receiver without staging remote files
+  hosts: photo_receivers
+  gather_facts: false
+  become: false
+  any_errors_fatal: true
+  tasks:
+    - name: Check the observed management identity
+      ansible.builtin.import_tasks: tasks/photo-backup-identity.yml
+    - name: Inspect the receiver source packages
+      ansible.builtin.import_tasks: tasks/photo-backup-receiver.yml
+
+- name: Inspect the declared photo controller and manual DSM prerequisites
+  hosts: photo_controllers
+  gather_facts: false
+  become: false
+  any_errors_fatal: true
+  tasks:
+    - name: Check the observed management identity
+      ansible.builtin.import_tasks: tasks/photo-backup-identity.yml
+    - name: Inspect the controller source package
+      ansible.builtin.import_tasks: tasks/photo-backup-controller.yml
+    - name: Inspect manually managed DSM prerequisites
+      ansible.builtin.import_tasks: tasks/photo-backup-synology.yml

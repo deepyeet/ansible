@@ -1,0 +1,6 @@
+# Package contents and destinations; observed hashes belong to host inventory.
+pixel_runtime_source_layout:
+  farm-startup.sh.j2: /data/adb/service.d/farm-startup.sh
+  my_drive_id.txt.j2: '{{ pixel_runtime_config.scripts_dir }}/my_drive_id.txt'
+  pixel_health.sh.j2: '{{ pixel_runtime_config.scripts_dir }}/pixel_health.sh'
+  reset_and_free.sh.j2: '{{ pixel_runtime_config.scripts_dir }}/reset_and_free.sh'

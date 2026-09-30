@@ -1,0 +1,24 @@
+---
+- name: Constrain runtime paths and identity to the supported Android profile
+  ansible.builtin.assert:
+    that:
+      - pixel_runtime_config.scripts_dir is match('^/data/local/tmp/[A-Za-z0-9_-]+$')
+      - pixel_runtime_config.drive_mount is match('^/mnt/[A-Za-z0-9_-]+$')
+      - pixel_runtime_config.log_path is match('^/data/local/tmp/[A-Za-z0-9_-]+\.log$')
+      - pixel_runtime_config.drive_uuid is match('^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$')
+      - pixel_runtime_config.power_event is match('^/dev/input/event[0-9]+$')
+      - pixel_runtime_config.touch_event is match('^/dev/input/event[0-9]+$')
+      - pixel_runtime_config.lookup_retries | int > 0
+      - pixel_runtime_config.lookup_sleep | int > 0
+      - pixel_runtime_config.watchdog_interval | int > 0
+      - pixel_runtime_config.health_interval | int > 0
+      - pixel_runtime_config.log_max_bytes | int > 0
+    quiet: true
+
+- name: Require an explicit health URL without printing or contacting it
+  ansible.builtin.assert:
+    that:
+      - pixel_runtime_healthcheck_url is match('^https://[A-Za-z0-9./_-]+$')
+    quiet: true
+  no_log: true
+  diff: false

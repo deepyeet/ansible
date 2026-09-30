@@ -1,0 +1,12 @@
+#!/bin/sh
+# Missing runtime state is an observation, never an instruction to repair it.
+set -eu
+if [ -f /sdcard/the_binding/.mount_check ]; then
+  echo CANARY_PRESENT
+else
+  echo CANARY_MISSING
+fi
+awk -v drive={{ pixel_runtime_config.drive_mount | quote }} '$5 == drive || $5 == "/storage/emulated/0/the_binding" {print}' /proc/1/mountinfo
+ps -A -o PID,ARGS | awk -v watchdog={{ (pixel_runtime_config.scripts_dir + '/watchdog_runner.sh') | quote }} -v health={{ (pixel_runtime_config.scripts_dir + '/pixel_health.sh') | quote }} '$NF == watchdog || $NF == health {print "WORKER", $1, $NF}'
+echo 'SOURCE_MATCH_ONLY: mount and process observations do not prove cloud backup'
+echo 'UNVERIFIED: Photos staging exclusion and cleanup correctness'

@@ -1,0 +1,28 @@
+---
+# All actions in this play execute on the controller. No SSH or remote modules.
+# The same preflight is imported before the live read-only audit.
+- name: Validate photo backup declarations and all rendered source bytes locally
+  hosts: photo_backup
+  gather_facts: false
+  become: false
+  any_errors_fatal: true
+  tasks:
+    - name: Validate the explicit pipeline relationships
+      ansible.builtin.import_tasks: tasks/photo-backup-topology.yml
+
+    - name: Validate the Pixel configuration against its published endpoint
+      ansible.builtin.include_tasks: tasks/photo-backup-pixel-contract.yml
+      vars:
+        photo_peer: '{{ hostvars[photo_edge.value.receiver] }}'
+      loop: '{{ photo_pipelines | dict2items }}'
+      loop_control:
+        loop_var: photo_edge
+        label: '{{ photo_edge.key }}'
+
+    - name: Validate the receiver source package locally
+      ansible.builtin.import_tasks: tasks/photo-backup-receiver-validate.yml
+      when: inventory_hostname in groups['photo_receivers']
+
+    - name: Validate the controller source package locally
+      ansible.builtin.import_tasks: tasks/photo-backup-controller-validate.yml
+      when: inventory_hostname in groups['photo_controllers']

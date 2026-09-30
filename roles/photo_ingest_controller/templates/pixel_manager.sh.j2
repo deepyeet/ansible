@@ -1,0 +1,187 @@
+#!/bin/bash
+
+# --- SINGLETON LOCK ---
+LOCKFILE="{{ photo_ingest.state_dir }}/pixel_manager.lock"
+exec 200>"$LOCKFILE"
+flock -n 200 || { echo "Script is already running. Aborting."; exit 1; }
+
+# --- CONFIGURATION ---
+BASE_DIR="{{ photo_ingest.base_dir }}"
+PIXEL_IP="{{ photo_ingest_endpoint.address }}"
+SSH_KEY="{{ photo_ingest.ssh_key_path }}"
+HC_URL="{{ photo_ingest_healthcheck_url }}"
+
+# SSH Command (-n protects loops)
+SSH_CMD="ssh -p {{ photo_ingest_endpoint.ssh_port }} -i $SSH_KEY -n {{ photo_ingest_endpoint.ssh_user }}@$PIXEL_IP"
+
+# Pixel Paths
+PIXEL_ROOT="{{ photo_ingest_endpoint.root }}"
+PIXEL_INCOMING="$PIXEL_ROOT/incoming"
+PIXEL_STAGING="$PIXEL_ROOT/.staging"
+CANARY_FILE="$PIXEL_ROOT/.mount_check"
+
+# Local State Folders
+DIR_INBOX="$BASE_DIR/0_Inbox"
+DIR_QUEUE="$BASE_DIR/1_Queue"
+DIR_UPLOADING="$BASE_DIR/2_Uploading"
+DIR_DONE="$BASE_DIR/3_Done"
+TEMP_LIST="{{ photo_ingest.state_dir }}/pixel_incoming_state.txt"
+
+STATE_FILE="{{ photo_ingest.state_dir }}/pixel_last_run.txt"
+INTERVAL={{ photo_ingest.cleanup_interval }}
+
+mkdir -p "$DIR_INBOX" "$DIR_QUEUE" "$DIR_UPLOADING" "$DIR_DONE"
+curl -fsS -m 10 --retry 3 "$HC_URL/start" > /dev/null
+
+function handle_exit {
+    if [ $? -ne 0 ]; then
+        curl -fsS -m 10 --retry 5 "$HC_URL/fail"
+    fi
+}
+
+trap handle_exit EXIT
+
+# --- SAFETY CHECK 1: PRE-FLIGHT CANARY ---
+if ! $SSH_CMD "[ -f '$CANARY_FILE' ]"; then
+    echo "[CRITICAL] Mount Canary missing! Drive is NOT mounted."
+    curl -fsS -m 10 --retry 3 "$HC_URL/fail" > /dev/null
+    exit 1
+fi
+
+# --- CLEANUP ARTIFACTS ---
+echo "Cleaning up metadata and thumbnail artifacts..."
+for TARGET_DIR in "$DIR_INBOX" "$DIR_UPLOADING"; do
+    if [ -d "$TARGET_DIR" ]; then
+        # Delete @eaDir directories and their contents
+        find "$TARGET_DIR" -depth -name "@eaDir" -type d -exec rm -rf {} +
+
+        # Delete Windows/Synology thumbnail databases
+        find "$TARGET_DIR" -type f \( -name "Thumbs.db" -o -name "Thumbs_*.db" \) -delete
+    fi
+done
+
+# --- SAFETY CHECK 2: INGEST & DEDUPE ---
+if [ "$(ls -A "$DIR_INBOX")" ]; then
+    echo "Processing Inbox..."
+    # Vacuum all subfolders, flatten, hash, and move
+    # Exclude: @Syno folders, Hidden files (.*), and SYNOFILE_THUMB files
+    find "$DIR_INBOX" -type f \
+      ! -name "*@Syno*" \
+      ! -name ".*" \
+      ! -name "SYNOFILE_THUMB*" \
+      ! -name "Thumbs*.db" \
+      -mmin +{{ photo_ingest.ingest_age }} \
+      -newermt "{{ photo_ingest.ingest_min_date }}" \
+    | while read -r FILE_PATH; do
+        FILENAME=$(basename "$FILE_PATH")
+        EXTENSION="${FILENAME##*.}"
+        NAME_ONLY="${FILENAME%.*}"
+        
+        FILE_HASH=$(md5sum "$FILE_PATH" | awk '{print $1}')
+        SHORT_HASH=${FILE_HASH:0:8}
+        NEW_NAME="${NAME_ONLY}_${SHORT_HASH}.${EXTENSION}"
+        
+        if [ -f "$DIR_QUEUE/$NEW_NAME" ] || \
+           [ -f "$DIR_UPLOADING/$NEW_NAME" ] || \
+           [ -f "$DIR_DONE/$NEW_NAME" ]; then
+            echo "Duplicate Detected (Discarding): $FILENAME"
+            rm "$FILE_PATH"
+        else
+            mv "$FILE_PATH" "$DIR_QUEUE/$NEW_NAME"
+            echo "Ingested: $FILENAME -> $NEW_NAME"
+        fi
+    done
+    find "$DIR_INBOX" -mindepth 2 -type d -empty -delete
+fi
+
+# --- STEP 2: PUSH (Queue -> Pixel Staging) ---
+if [ -z "$(ls -A "$DIR_QUEUE")" ] && [ -z "$(ls -A "$DIR_UPLOADING")" ]; then
+    echo "Queue and Uploading empty. Sync complete."
+    curl -fsS -m 10 --retry 3 "$HC_URL" > /dev/null
+    exit 0
+fi
+
+if [ "$(ls -A "$DIR_QUEUE")" ]; then
+    echo "Rsyncing to Staging..."
+    rsync -avP --timeout={{ photo_ingest.rsync_timeout }} \
+        -e "ssh -p {{ photo_ingest_endpoint.ssh_port }} -i $SSH_KEY" \
+        --delete-after \
+        "$DIR_QUEUE"/ \
+        {{ photo_ingest_endpoint.ssh_user }}@$PIXEL_IP:"$PIXEL_STAGING"/
+
+    if [ $? -ne 0 ]; then
+        echo "[ERROR] Rsync failed. Aborting."
+        curl -fsS -m 10 --retry 3 "$HC_URL/fail" > /dev/null
+        exit 1
+    fi
+
+    # --- STEP 3: ATOMIC PROMOTE (Staging -> Incoming) ---
+    echo "Promoting files to Incoming..."
+    $SSH_CMD "find '$PIXEL_STAGING' -mindepth 1 -maxdepth 1 -type f -exec mv -f {} '$PIXEL_INCOMING/' \;"
+fi
+
+# --- STEP 4 & 5: BATCH VERIFICATION ---
+echo "Fetching Pixel State..."
+
+# 1. Verify Canary (Start)
+# 2. List Files
+# 3. Verify Canary (End)
+# If the drive drops at any point, the chain fails (Exit != 0), and we assume invalid state.
+$SSH_CMD "[ -f '$CANARY_FILE' ] && ls -1A '$PIXEL_INCOMING' && [ -f '$CANARY_FILE' ]" > "$TEMP_LIST"
+
+if [ $? -ne 0 ]; then
+    echo "[CRITICAL] State verification failed (Drive unstable or disconnected). Aborting."
+    rm -f "$TEMP_LIST"
+    curl -fsS -m 10 --retry 3 "$HC_URL/fail" > /dev/null
+    exit 1
+fi
+
+echo "State fetched. Processing lists..."
+
+# 4. Verify Receipt (Queue -> Uploading)
+cd "$DIR_QUEUE" || exit
+find . -maxdepth 1 -type f | while read -r FILE; do
+    CLEAN_FILE="${FILE#./}"
+    # Grep the local text file (Instant)
+    if grep -Fqx "$CLEAN_FILE" "$TEMP_LIST"; then
+        echo "Confirmed on Pixel: $CLEAN_FILE"
+        mv "$CLEAN_FILE" "$DIR_UPLOADING/"
+    fi
+done
+
+# 5. Check Completion (Uploading -> Done)
+cd "$DIR_UPLOADING" || exit
+find . -maxdepth 1 -type f | while read -r FILE; do
+    CLEAN_FILE="${FILE#./}"
+    # If file is NOT in the list, it has been uploaded/deleted by Google Photos
+    if ! grep -Fqx "$CLEAN_FILE" "$TEMP_LIST"; then
+        echo "Upload Complete: $CLEAN_FILE"
+        mv "$CLEAN_FILE" "$DIR_DONE/"
+    fi
+done
+
+# Cleanup
+rm -f "$TEMP_LIST"
+
+# --- WAKE THE PUPPET ---
+NOW=$(date +%s)
+LAST_RUN=$(cat "$STATE_FILE" 2>/dev/null || echo 0)
+ELAPSED=$((NOW - LAST_RUN))
+
+if [ "$ELAPSED" -ge "$INTERVAL" ]; then
+    echo "Interval reached ($((ELAPSED/60))m / $((INTERVAL/60))m). Garbage collecting..."
+
+    # Run the maintenance
+    $SSH_CMD "{{ photo_ingest_endpoint.cleanup_argv | join(' ') }}"
+
+    if [ $? -eq 0 ]; then
+        echo "$NOW" > "$STATE_FILE"
+    fi
+else
+    REMAINING=$((INTERVAL - ELAPSED))
+    echo "Skipping space freeing. Next run in $((REMAINING / 60)) minutes."
+fi
+
+# --- MONITORING ---
+echo "Sync Cycle Complete."
+curl -fsS -m 10 --retry 3 "$HC_URL" > /dev/null

@@ -9,6 +9,13 @@ all:
     jujupc:
       ansible_host: juju-pc
       ansible_connection: local
+    pixel1:
+      ansible_host: 192.168.1.160
+      ansible_user: root
+    ds223j:
+      ansible_host: 192.168.1.253
+      ansible_user: '{{ secret_unix_name }}'
+      ansible_python_interpreter: /usr/bin/python3
   children:
     monolith:
       hosts:
@@ -16,3 +23,11 @@ all:
     wsl:
       hosts:
         jujupc: {}
+    photo_backup:
+      children:
+        photo_receivers:
+          hosts:
+            pixel1: {}
+        photo_controllers:
+          hosts:
+            ds223j: {}

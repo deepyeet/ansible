@@ -1,0 +1,52 @@
+---
+- name: Require audit operation and SSH without privilege escalation
+  ansible.builtin.assert:
+    that:
+      - photo_backup_operation | default('audit') == 'audit'
+      - ansible_connection == 'ssh'
+      - not (ansible_become | default(false) | bool)
+      - photo_adoption_identity.uid is integer
+      - photo_adoption_identity.uid >= 0
+      - photo_adoption_sources is mapping
+    quiet: true
+    fail_msg: Adoption only inspects existing hosts; a reviewed baseline is required.
+
+- name: Require a nonempty explicit pipeline map
+  ansible.builtin.assert:
+    that:
+      - photo_pipelines is mapping
+      - photo_pipelines | length > 0
+      - groups['photo_controllers'] | length > 0
+      - groups['photo_receivers'] | length > 0
+    quiet: true
+
+- name: Require one controller and receiver per pipeline for legacy singleton state
+  ansible.builtin.assert:
+    that:
+      - photo_pipelines.values() | map(attribute='controller') | unique | length == photo_pipelines | length
+      - photo_pipelines.values() | map(attribute='receiver') | unique | length == photo_pipelines | length
+      - groups['photo_controllers'] | intersect(groups['photo_receivers']) | length == 0
+      - groups['photo_controllers'] | sort == photo_pipelines.values() | map(attribute='controller') | list | sort
+      - groups['photo_receivers'] | sort == photo_pipelines.values() | map(attribute='receiver') | list | sort
+      - groups['photo_backup'] | sort == (groups['photo_controllers'] + groups['photo_receivers']) | sort
+    quiet: true
+
+- name: Validate references even when only one side of the pipeline is limited
+  ansible.builtin.assert:
+    that:
+      - item.value.controller in groups['photo_controllers']
+      - item.value.receiver in groups['photo_receivers']
+      - hostvars[item.value.receiver].photo_receiver is mapping
+    quiet: true
+  loop: '{{ photo_pipelines | dict2items }}'
+  loop_control:
+    label: '{{ item.key }}'
+
+- name: Require the declared management users without printing the vaulted login
+  ansible.builtin.assert:
+    that:
+      - inventory_hostname not in groups['photo_receivers'] or ansible_user == 'root'
+      - inventory_hostname not in groups['photo_controllers'] or ansible_user == secret_unix_name
+    quiet: true
+  no_log: true
+  diff: false

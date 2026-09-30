@@ -1,0 +1,8 @@
+---
+- name: Constrain paths to the supported rooted Android storage profile
+  ansible.builtin.assert:
+    that:
+      - pbg_config.helpers_dir is match('^/data/local/tmp/[A-Za-z0-9_-]+$')
+      - pbg_config.drive_mount is match('^/mnt/[A-Za-z0-9_-]+$')
+      - pbg_config.bind_path == '/mnt/runtime/write/emulated/0/the_binding'
+    quiet: true

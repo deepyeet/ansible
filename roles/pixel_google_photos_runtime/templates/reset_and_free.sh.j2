@@ -1,0 +1,116 @@
+#!/system/bin/sh
+
+# --- CONFIG ---
+# Pixel 1 (1080x1920)
+TAP_PROFILE_X={{ pixel_runtime_config.profile_x }}
+TAP_PROFILE_Y={{ pixel_runtime_config.profile_y }}
+TAP_MENU_FREE_UP_X={{ pixel_runtime_config.free_x }}
+TAP_MENU_FREE_UP_Y={{ pixel_runtime_config.free_y }}
+TAP_CONFIRM_X={{ pixel_runtime_config.confirm_x }}
+TAP_CONFIRM_Y={{ pixel_runtime_config.confirm_y }}
+TAP_HOME_X={{ pixel_runtime_config.home_x }}
+TAP_HOME_Y={{ pixel_runtime_config.home_y }}
+TAP_BACK_X={{ pixel_runtime_config.back_x }}
+TAP_BACK_Y={{ pixel_runtime_config.back_y }}
+
+# --- HELPERS ---
+
+touch_event() {
+    sendevent {{ pixel_runtime_config.touch_event }} $1 $2 $3
+}
+
+syn() {
+    sendevent {{ pixel_runtime_config.touch_event }} 0 0 0
+}
+
+# --- RAW DRIVERS ---
+
+raw_power() {
+    sendevent {{ pixel_runtime_config.power_event }} 1 116 1; sendevent {{ pixel_runtime_config.power_event }} 0 0 0
+    sleep 0.2
+    sendevent {{ pixel_runtime_config.power_event }} 1 116 0; sendevent {{ pixel_runtime_config.power_event }} 0 0 0
+}
+
+raw_tap() {
+    local X=$1
+    local Y=$2
+    touch_event 3 57 100
+    touch_event 3 53 $X
+    touch_event 3 54 $Y
+    touch_event 3 58 50
+    syn
+    sleep 0.1
+    touch_event 3 57 4294967295
+    syn
+}
+
+raw_swipe_up() {
+    local X=540
+    local ID=101
+    
+    # START (Bottom)
+    touch_event 3 57 $ID
+    touch_event 3 53 $X
+    touch_event 3 54 1600
+    touch_event 3 58 50
+    syn
+    sleep 0.05
+
+    # GLIDE (Slower interpolation for better registration)
+    for Y in 1300 1000 700 400; do
+        touch_event 3 53 $X
+        touch_event 3 54 $Y
+        touch_event 3 58 50
+        syn
+        sleep 0.05
+    done
+
+    # RELEASE
+    touch_event 3 57 4294967295
+    syn
+}
+
+# --- EXECUTION ---
+
+echo "1. Checking Wake State..."
+CURRENT_STATE=$(dumpsys power | grep "mWakefulness=Awake")
+
+if [ -z "$CURRENT_STATE" ]; then
+  echo "   -> Sleeping. Powering UP..."
+  raw_power
+  sleep 5  # Increased: Wait for screen hardware
+  
+  echo "   -> Performing SMOOTH swipe..."
+  raw_swipe_up
+  sleep 6  # HEAVY PAUSE: Wait for launcher to render after unlock
+else
+  echo "   -> Already Awake."
+fi
+
+echo "2. Going Home..."
+raw_tap $TAP_HOME_X $TAP_HOME_Y
+sleep 4  # Increased: Home screen redraw lag
+
+echo "3. Resetting Photos App..."
+am start -n com.google.android.apps.photos/.home.HomeActivity --activity-clear-top
+sleep 8  # Increased: Cold start insurance
+raw_tap $TAP_BACK_X $TAP_BACK_Y
+sleep 2
+am start -n com.google.android.apps.photos/.home.HomeActivity --activity-clear-top
+sleep 6  # Increased: Warm start settle time
+
+echo "4. Tapping Profile..."
+raw_tap $TAP_PROFILE_X $TAP_PROFILE_Y
+sleep 8  # Increased: Menu animation lag
+
+echo "5. Tapping Free Up Space..."
+raw_tap $TAP_MENU_FREE_UP_X $TAP_MENU_FREE_UP_Y
+sleep 30 # CRITICAL: Calculating space on Pixel 1 takes forever
+
+echo "6. Confirming..."
+raw_tap $TAP_CONFIRM_X $TAP_CONFIRM_Y
+
+# --- CLEANUP ---
+sleep 4
+echo "7. Done. Going Home."
+raw_tap $TAP_HOME_X $TAP_HOME_Y

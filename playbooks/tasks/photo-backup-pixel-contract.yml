@@ -1,0 +1,16 @@
+---
+# The play explicitly includes the Pixel roles. Check that their configuration
+# agrees with the receiver endpoint consumed by the NAS.
+- name: Require the receiver endpoint to match the Pixel configuration
+  ansible.builtin.assert:
+    that:
+      - photo_peer.photo_receiver.protocol == 'rsync_drop_v1'
+      - photo_peer.photo_receiver.completion == 'local_absence_after_cleanup'
+      - photo_peer.photo_receiver.root == '/sdcard/the_binding'
+      - photo_peer.pbg_config.bind_path == '/mnt/runtime/write/emulated/0/the_binding'
+      - photo_peer.photo_receiver.ssh_user == 'root'
+      - photo_peer.photo_receiver.cleanup_argv == ['sh', photo_peer.pbg_config.helpers_dir + '/reset_and_free.sh']
+      - photo_peer.pixel_runtime_config.scripts_dir == photo_peer.pbg_config.helpers_dir
+      - photo_peer.pixel_runtime_config.drive_mount == photo_peer.pbg_config.drive_mount
+    quiet: true
+    fail_msg: The receiver endpoint and Pixel roles must agree on storage and cleanup paths.

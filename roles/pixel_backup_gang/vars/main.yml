@@ -1,0 +1,11 @@
+# Package contents and destinations; observed hashes belong to host inventory.
+pbg_source_layout:
+  disable_tcp_debugging.sh.j2: '{{ pbg_config.helpers_dir }}/disable_tcp_debugging.sh'
+  enable_tcp_debugging.sh.j2: '{{ pbg_config.helpers_dir }}/enable_tcp_debugging.sh'
+  find_device.sh.j2: '{{ pbg_config.helpers_dir }}/find_device.sh'
+  mount_ext4.sh.j2: '{{ pbg_config.helpers_dir }}/mount_ext4.sh'
+  remount_vfat.sh.j2: '{{ pbg_config.helpers_dir }}/remount_vfat.sh'
+  run_as_termux.sh.j2: '{{ pbg_config.helpers_dir }}/run_as_termux.sh'
+  show_devices.sh.j2: '{{ pbg_config.helpers_dir }}/show_devices.sh'
+  start_global_shell.sh.j2: '{{ pbg_config.helpers_dir }}/start_global_shell.sh'
+  unmount.sh.j2: '{{ pbg_config.helpers_dir }}/unmount.sh'

@@ -1,0 +1,88 @@
+---
+argument_specs:
+  main:
+    short_description: Inspect captured sources without remote changes
+    options: &adoption_options
+      photo_ingest_adoption_sources:
+        type: list
+        elements: dict
+        required: true
+        options:
+          source:
+            type: str
+          template:
+            type: str
+            required: true
+          dest:
+            type: str
+            required: true
+          sha256:
+            type: str
+            required: true
+          uid:
+            type: int
+            required: true
+          gid:
+            type: int
+            required: true
+          mode:
+            type: str
+            required: true
+      photo_ingest:
+        type: dict
+        required: true
+        options:
+          base_dir:
+            type: str
+            required: true
+          state_dir:
+            type: str
+            required: true
+          ssh_key_path:
+            type: str
+            required: true
+          ingest_age:
+            type: int
+            required: true
+          ingest_min_date:
+            type: str
+            required: true
+          rsync_timeout:
+            type: int
+            required: true
+          cleanup_interval:
+            type: int
+            required: true
+      photo_ingest_healthcheck_url:
+        type: str
+        required: true
+        no_log: true
+      photo_ingest_endpoint:
+        type: dict
+        required: true
+        options:
+          protocol:
+            type: str
+            required: true
+          address:
+            type: str
+            required: true
+          root:
+            type: str
+            required: true
+          ssh_user:
+            type: str
+            required: true
+          ssh_port:
+            type: int
+            required: true
+          completion:
+            type: str
+            required: true
+          cleanup_argv:
+            type: list
+            required: true
+            elements: str
+  validate:
+    short_description: Validate source inputs and rendering on the controller only
+    options: *adoption_options

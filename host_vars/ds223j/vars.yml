@@ -1,0 +1,20 @@
+photo_ingest:
+  base_dir: /volume1/pixel
+  ssh_key_path: /volume1/homes/admin/keys/id_ed25519
+  ingest_age: 4
+  ingest_min_date: '2020-01-01'
+  rsync_timeout: 60
+  cleanup_interval: 28800
+  state_dir: /volume1/homes/admin
+# Manually configured DSM prerequisites, inspected by the Synology play tasks.
+synology_photo_backup:
+  owner: admin
+  volume:
+    path: /volume1
+    source: /dev/vg1/volume_1
+    fstype: btrfs
+  schedule:
+    managed_by: dsm_ui
+    task_id: 13
+    name: Pixel Upload
+    interval_minutes: 5

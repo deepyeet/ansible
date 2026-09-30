@@ -1,0 +1,113 @@
+---
+argument_specs:
+  main:
+    short_description: Inspect captured sources without remote changes
+    options: &adoption_options
+      pixel_runtime_adoption_sources:
+        type: list
+        elements: dict
+        required: true
+        options:
+          source:
+            type: str
+          template:
+            type: str
+            required: true
+          dest:
+            type: str
+            required: true
+          sha256:
+            type: str
+            required: true
+          uid:
+            type: int
+            required: true
+          gid:
+            type: int
+            required: true
+          mode:
+            type: str
+            required: true
+      pixel_runtime_config:
+        type: dict
+        required: true
+        options:
+          scripts_dir:
+            type: str
+            required: true
+          drive_mount:
+            type: str
+            required: true
+          log_path:
+            type: str
+            required: true
+          drive_uuid:
+            type: str
+            required: true
+          power_event:
+            type: str
+            required: true
+          touch_event:
+            type: str
+            required: true
+          lookup_retries:
+            type: int
+            required: true
+          lookup_sleep:
+            type: int
+            required: true
+          watchdog_interval:
+            type: int
+            required: true
+          health_interval:
+            type: int
+            required: true
+          health_max_temp:
+            type: int
+            required: true
+          log_max_bytes:
+            type: int
+            required: true
+          panic_delay:
+            type: int
+            required: true
+          softlockup_panic:
+            type: int
+            required: true
+          profile_x:
+            type: int
+            required: true
+          profile_y:
+            type: int
+            required: true
+          free_x:
+            type: int
+            required: true
+          free_y:
+            type: int
+            required: true
+          confirm_x:
+            type: int
+            required: true
+          confirm_y:
+            type: int
+            required: true
+          home_x:
+            type: int
+            required: true
+          home_y:
+            type: int
+            required: true
+          back_x:
+            type: int
+            required: true
+          back_y:
+            type: int
+            required: true
+      pixel_runtime_healthcheck_url:
+        type: str
+        required: true
+        no_log: true
+  validate:
+    short_description: Validate source inputs and rendering on the controller only
+    options: *adoption_options

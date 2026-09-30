@@ -1,0 +1,19 @@
+# Controller-only role entry points; keep input bindings aligned with the live composition.
+---
+- name: Validate the operator-managed scheduler profile
+  ansible.builtin.import_tasks: photo-backup-scheduler.yml
+
+- name: Pass the declared peer endpoint to the ingest controller
+  ansible.builtin.include_role:
+    name: photo_ingest_controller
+    tasks_from: validate
+    public: false
+  vars:
+    # Topology preflight requires exactly one matching edge for each controller.
+    photo_pipeline: "{{ photo_pipelines.values() | selectattr('controller', 'equalto', inventory_hostname) | first }}"
+    photo_peer: '{{ hostvars[photo_pipeline.receiver] }}'
+    photo_ingest_endpoint: >-
+      {{ photo_peer.photo_receiver | combine({
+        'address': photo_peer.photo_receiver.data_address | default(photo_peer.ansible_host)}) }}
+    photo_ingest_adoption_sources: '{{ photo_adoption_sources.photo_ingest_controller }}'
+    photo_ingest_healthcheck_url: '{{ vault_synology_pixel_healthcheck_url }}'

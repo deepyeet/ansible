@@ -1,0 +1,3 @@
+# Package contents and destinations; observed hashes belong to host inventory.
+photo_ingest_source_layout:
+  pixel_manager.sh.j2: '{{ photo_ingest.state_dir }}/pixel_manager.sh'

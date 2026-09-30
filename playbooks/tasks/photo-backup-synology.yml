@@ -1,0 +1,17 @@
+---
+- name: Read DSM volume, account, directories and scheduled task definition
+  ansible.builtin.raw: "{{ lookup('ansible.builtin.template', playbook_dir + '/templates/photo-backup-synology-probe.sh.j2') }}"
+  register: photo_synology_observation
+  become: false
+  check_mode: false
+  changed_when: false
+
+- name: Require visible manually configured DSM prerequisites
+  ansible.builtin.assert:
+    that:
+      - "'PREREQUISITES_OK' in photo_synology_observation.stdout_lines"
+    quiet: true
+
+- name: Report source matching and the unverified privileged prerequisites separately
+  ansible.builtin.debug:
+    msg: '{{ photo_synology_observation.stdout_lines }}'

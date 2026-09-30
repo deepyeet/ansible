@@ -1,0 +1,99 @@
+# Immutable observed source fingerprints; drift must never regenerate this file.
+photo_adoption_sources:
+  pixel_google_photos_runtime:
+  - source: pixel/service.d/farm-startup.sh
+    dest: /data/adb/service.d/farm-startup.sh
+    template: farm-startup.sh.j2
+    sha256: c2a66bb9a037d56170fe17390c048a052ce62cb760354584728324ba61cf30af
+    uid: 0
+    gid: 0
+    mode: '755'
+  - source: pixel/helpers/my_drive_id.txt
+    dest: /data/local/tmp/pixel-backup-gang/my_drive_id.txt
+    template: my_drive_id.txt.j2
+    sha256: ae0d162dc85e72983468e4d119f9d2705c310ddab6cdb8b77bd41d0909701d11
+    uid: 0
+    gid: 0
+    mode: '644'
+  - source: pixel/helpers/pixel_health.sh
+    dest: /data/local/tmp/pixel-backup-gang/pixel_health.sh
+    template: pixel_health.sh.j2
+    sha256: a75de0b56afa81f28c88fc31c18a090687ca518c600ec46d539764c91586985f
+    uid: 0
+    gid: 0
+    mode: '755'
+  - source: pixel/helpers/reset_and_free.sh
+    dest: /data/local/tmp/pixel-backup-gang/reset_and_free.sh
+    template: reset_and_free.sh.j2
+    sha256: 42cdbaf71335606f3cd719171bdc008e344840a2bc437aac70711e525782d581
+    uid: 0
+    gid: 0
+    mode: '755'
+  pixel_backup_gang:
+  - source: pixel/helpers/disable_tcp_debugging.sh
+    dest: /data/local/tmp/pixel-backup-gang/disable_tcp_debugging.sh
+    template: disable_tcp_debugging.sh.j2
+    sha256: 2424a899bc41105889dc5807351ee77c1f60ec26ff24dac9e593dd8a4b1b8ec2
+    uid: 0
+    gid: 1015
+    mode: '771'
+  - source: pixel/helpers/enable_tcp_debugging.sh
+    dest: /data/local/tmp/pixel-backup-gang/enable_tcp_debugging.sh
+    template: enable_tcp_debugging.sh.j2
+    sha256: 4b532013c640c2be377f21bebd8a56ee4fc375b94c26720df1e6b52bf2a14935
+    uid: 0
+    gid: 1015
+    mode: '771'
+  - source: pixel/helpers/find_device.sh
+    dest: /data/local/tmp/pixel-backup-gang/find_device.sh
+    template: find_device.sh.j2
+    sha256: acffa410ad06894ffaa4edbe55caae50b01cea95b6ccba9a6d8cfb723ee7e8bc
+    uid: 0
+    gid: 1015
+    mode: '771'
+  - source: pixel/helpers/mount_ext4.sh
+    dest: /data/local/tmp/pixel-backup-gang/mount_ext4.sh
+    template: mount_ext4.sh.j2
+    sha256: 1081b48780fc5c2a1a857721a0263bd5c26c014417804b7b8aa73abb25441ad7
+    uid: 0
+    gid: 1015
+    mode: '771'
+  - source: pixel/helpers/remount_vfat.sh
+    dest: /data/local/tmp/pixel-backup-gang/remount_vfat.sh
+    template: remount_vfat.sh.j2
+    sha256: 949edcf5aab7534b3d1c654b4531fe59393d0262fb135a8913dbdbe672e1614d
+    uid: 0
+    gid: 1015
+    mode: '771'
+  - source: pixel/helpers/run_as_termux.sh
+    dest: /data/local/tmp/pixel-backup-gang/run_as_termux.sh
+    template: run_as_termux.sh.j2
+    sha256: a834eec8f337c68fdd19e7d25f9eb0bb499e719b41e3fda35c65874693afc743
+    uid: 0
+    gid: 1015
+    mode: '771'
+  - source: pixel/helpers/show_devices.sh
+    dest: /data/local/tmp/pixel-backup-gang/show_devices.sh
+    template: show_devices.sh.j2
+    sha256: 4fbf218b53b0ed57d1ab3ee0fd08132b9eb5edcb338db086f1ab3c53ff87041b
+    uid: 0
+    gid: 1015
+    mode: '771'
+  - source: pixel/helpers/start_global_shell.sh
+    dest: /data/local/tmp/pixel-backup-gang/start_global_shell.sh
+    template: start_global_shell.sh.j2
+    sha256: 4d8bfe0ea9982dfdefaf18f55f29944df5170b10a721226229dbe10ae7a14b07
+    uid: 0
+    gid: 1015
+    mode: '771'
+  - source: pixel/helpers/unmount.sh
+    dest: /data/local/tmp/pixel-backup-gang/unmount.sh
+    template: unmount.sh.j2
+    sha256: 2ad5bfd02be0d8d2d7370987501057e08e4a5ba998f0947959bbafc364bc72ac
+    uid: 0
+    gid: 1015
+    mode: '771'
+
+# Observed SSH identity; this is not the script owner on DSM.
+photo_adoption_identity:
+  uid: 0

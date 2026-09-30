@@ -1,0 +1,46 @@
+---
+argument_specs:
+  main:
+    short_description: Inspect captured sources without remote changes
+    options: &adoption_options
+      pbg_adoption_sources:
+        type: list
+        elements: dict
+        required: true
+        options:
+          source:
+            type: str
+          template:
+            type: str
+            required: true
+          dest:
+            type: str
+            required: true
+          sha256:
+            type: str
+            required: true
+          uid:
+            type: int
+            required: true
+          gid:
+            type: int
+            required: true
+          mode:
+            type: str
+            required: true
+      pbg_config:
+        type: dict
+        required: true
+        options:
+          helpers_dir:
+            type: str
+            required: true
+          drive_mount:
+            type: str
+            required: true
+          bind_path:
+            type: str
+            required: true
+  validate:
+    short_description: Validate source inputs and rendering on the controller only
+    options: *adoption_options

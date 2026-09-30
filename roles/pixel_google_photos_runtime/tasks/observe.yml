@@ -1,0 +1,11 @@
+---
+- name: Read mount and worker observations without running the runtime
+  ansible.builtin.raw: "{{ lookup('ansible.builtin.template', 'audit/runtime-probe.sh.j2') }}"
+  register: pixel_runtime_observation
+  become: false
+  check_mode: false
+  changed_when: false
+
+- name: Report observations without inferring cloud upload completion
+  ansible.builtin.debug:
+    msg: '{{ pixel_runtime_observation.stdout_lines }}'

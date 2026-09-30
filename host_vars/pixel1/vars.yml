@@ -1,0 +1,51 @@
+photo_receiver:
+  protocol: rsync_drop_v1
+  root: /sdcard/the_binding
+  ssh_user: root
+  ssh_port: 22
+  completion: local_absence_after_cleanup
+  cleanup_argv:
+  - sh
+  - '{{ pbg_config.helpers_dir }}/reset_and_free.sh'
+
+# rsync_drop_v1 requires same-filesystem promotion, staging excluded from Photos
+# scanning, and cleanup that deletes only backed-up files. These are required
+# assumptions of the algorithm; configuration assertions cannot establish them.
+# Evidence records what has actually been observed, independently of source match.
+photo_receiver_evidence:
+  same_filesystem_promotion: observed
+  staging_excluded_from_scanning: unverified
+  cleanup_removes_only_backed_up_files: unverified
+
+# Direct input to pixel_backup_gang; shared storage paths are defined here once.
+pbg_config:
+  drive_mount: /mnt/my_drive
+  bind_path: /mnt/runtime/write/emulated/0/the_binding
+  helpers_dir: /data/local/tmp/pixel-backup-gang
+
+# Direct input to pixel_google_photos_runtime.
+pixel_runtime_config:
+  scripts_dir: '{{ pbg_config.helpers_dir }}'
+  drive_mount: '{{ pbg_config.drive_mount }}'
+  log_path: /data/local/tmp/farm_startup.log
+  drive_uuid: 396b0587-83b3-e74b-b5a0-cecc479aa9c6
+  lookup_retries: 20
+  lookup_sleep: 5
+  watchdog_interval: 10
+  health_interval: 300
+  health_max_temp: 55
+  log_max_bytes: 10485760
+  panic_delay: 5
+  softlockup_panic: 1
+  profile_x: 990
+  profile_y: 140
+  free_x: 508
+  free_y: 1385
+  confirm_x: 553
+  confirm_y: 1716
+  home_x: 540
+  home_y: 1850
+  back_x: 200
+  back_y: 1850
+  power_event: /dev/input/event0
+  touch_event: /dev/input/event2

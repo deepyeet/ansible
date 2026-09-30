@@ -1,0 +1,60 @@
+#!/system/bin/sh
+
+# CONFIG
+HC_URL="{{ pixel_runtime_healthcheck_url }}"
+LOG_FILE="{{ pixel_runtime_config.log_path }}"
+CURL_BIN="/system/bin/curl"
+MOUNT_POINT="{{ pixel_runtime_config.drive_mount }}"
+CANARY_FILE="$MOUNT_POINT/the_binding/.mount_check"
+
+while true; do
+    # 1. GET VITALS
+    DUMPSYS=$(dumpsys battery)
+    LEVEL=$(echo "$DUMPSYS" | grep "level:" | awk '{print $2}')
+    TEMP_RAW=$(echo "$DUMPSYS" | grep "temperature:" | awk '{print $2}')
+    TEMP_C=$(($TEMP_RAW / 10))
+
+    # 2. CHECK DISK MOUNT (The logic you asked for)
+    # We check if the canary file exists (-f). 
+    if [ -f "$CANARY_FILE" ]; then
+        MOUNT_STATE="OK"
+        # Run df on the specific mount point. 
+        # Android df usually outputs: Filesystem 1K-blocks Used Available Use% Mounted on
+        # $4 corresponds to Available
+        DISK_AVAIL=$(df -k "$MOUNT_POINT" | tail -n 1 | awk '{print $4}')
+        
+        # Fallback if df fails to return a number
+        if [ -z "$DISK_AVAIL" ]; then DISK_AVAIL=0; fi
+        
+        DISK_MB=$(($DISK_AVAIL / 1024))
+    else
+        # Canary missing = FAIL FAIL FAIL
+        MOUNT_STATE="MISSING"
+        DISK_MB="0"
+    fi
+
+    # 3. LOG ROTATION CHECK
+    if [ -f "$LOG_FILE" ]; then
+        LOG_SIZE=$(wc -c < "$LOG_FILE")
+        if [ "$LOG_SIZE" -gt {{ pixel_runtime_config.log_max_bytes }} ]; then
+            echo "[HEALTH] Log truncated due to size." > "$LOG_FILE"
+        fi
+    fi
+
+    # 5. REPORT TO HEALTHCHECKS.IO
+    # Added Mount State to the payload
+    PAYLOAD="Mount: $MOUNT_STATE | Battery: $LEVEL% | Temp: ${TEMP_C}C | Disk: ${DISK_MB}MB"
+
+    # FAILURE LOGIC:
+    # Trigger fail if:
+    # 1. Mount is MISSING
+    # 2. Temp > 45C
+    if [ "$MOUNT_STATE" = "MISSING" ] || [ "$TEMP_C" -gt {{ pixel_runtime_config.health_max_temp }} ]; then
+        $CURL_BIN -fsS -X POST --data "$PAYLOAD" "$HC_URL/fail"
+    else
+        $CURL_BIN -fsS -X POST --data "$PAYLOAD" "$HC_URL"
+    fi
+
+    # Sleep 5 minutes
+    sleep {{ pixel_runtime_config.health_interval }}
+done

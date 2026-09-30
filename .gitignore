@@ -67,5 +67,7 @@ Temporary Items
 
 .gemini/
 .vault_pass
+# Investigation notes stay local to this checkout.
+/docs/
 __pycache__/
 *.pyc
