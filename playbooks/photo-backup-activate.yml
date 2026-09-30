@@ -25,7 +25,7 @@
         name: pixel_google_photos_runtime
         tasks_from: activation_state
       vars:
-        pixel_runtime_adoption_sources: '{{ photo_adoption_sources.pixel_google_photos_runtime }}'
+        pixel_runtime_files: '{{ photo_managed_files.pixel_google_photos_runtime }}'
         pixel_runtime_healthcheck_url: '{{ vault_pixel_backup_healthcheck_url }}'
     - name: Require a paused and idle controller for a stopped farm
       ansible.builtin.include_tasks: tasks/photo-backup-maintenance.yml
@@ -35,6 +35,6 @@
         name: pixel_google_photos_runtime
         tasks_from: start
       vars:
-        pixel_runtime_adoption_sources: '{{ photo_adoption_sources.pixel_google_photos_runtime }}'
+        pixel_runtime_files: '{{ photo_managed_files.pixel_google_photos_runtime }}'
         pixel_runtime_healthcheck_url: '{{ vault_pixel_backup_healthcheck_url }}'
         pixel_runtime_maintenance_ready: '{{ photo_maintenance_ready | default(false) }}'

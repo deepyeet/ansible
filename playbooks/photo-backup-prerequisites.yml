@@ -1,7 +1,7 @@
 ---
 # Runs after the operator prepares Android/Magisk/SSH, including after a reset.
 # Does not require the captured helper files, an existing mount, or health tokens.
-# Unlike the adoption play, passing this play does NOT mean the farm is installed.
+# Passing this play does not mean the farm is installed.
 - name: Explain whether the Pixel platform is ready for photo backup setup
   hosts: photo_receivers
   gather_facts: false

@@ -58,3 +58,7 @@ pixel_runtime_config:
   screen_density: 420
   power_device_name: qpnp_pon
   touch_device_name: synaptics_dsxv26
+
+# Expected effective UID for the management SSH login, separate from file ownership.
+photo_management_identity:
+  uid: 0

@@ -16,5 +16,5 @@
         'address': photo_peer.photo_receiver.data_address | default(photo_peer.ansible_host)}) }}
     photo_ingest_file_owner: '{{ synology_photo_backup.owner }}'
     photo_ingest_file_group: '{{ synology_photo_backup.group }}'
-    photo_ingest_adoption_sources: '{{ photo_adoption_sources.photo_ingest_controller }}'
+    photo_ingest_files: '{{ photo_managed_files.photo_ingest_controller }}'
     photo_ingest_healthcheck_url: '{{ vault_synology_pixel_healthcheck_url }}'

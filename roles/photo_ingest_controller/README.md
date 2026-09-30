@@ -18,14 +18,13 @@ role's transfer contract; broad OS compatibility has not been tested.
   protocol and completion semantics.
 - `photo_ingest_file_owner`, `photo_ingest_file_group`: supplied by the platform adapter.
 - `photo_ingest_healthcheck_url`: explicit value supplied from Vault.
-- `photo_ingest_adoption_sources`: reviewed manager destination/hash/UID/GID/mode.
+- `photo_ingest_files`: desired manager destination, template and mode.
 
 All inputs have a typed [argument schema](meta/argument_specs.yml). `main`
 plans then manages the rendered manager using the native template module; `plan` predicts
 changes without writes or sudo; `validate` checks inputs/rendering locally.
 `apply` consumes a preceding plan and refreshes only the file comparison.
-The pipeline runs platform/source preflight once before applying. `audit` requires
-the historical source hash and metadata without repair.
+The pipeline runs platform/source preflight once before applying.
 
 A matching source never invokes remote modules or sudo. A changed source needs
 `photo_ingest_maintenance_ready` from the play's paused/idle scheduler observation

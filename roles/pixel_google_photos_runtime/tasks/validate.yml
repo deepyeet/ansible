@@ -1,8 +1,7 @@
 ---
-- name: Require an explicit supported operation without global escalation
+- name: Keep the management connection free of global escalation
   ansible.builtin.assert:
     that:
-    - photo_backup_operation | default('manage') in ['manage', 'audit']
     - not (ansible_become | default(false) | bool)
     quiet: true
 - name: Validate the implementation inputs
@@ -14,27 +13,26 @@
     quiet: true
   no_log: true
   diff: false
-- name: Require the complete reviewed source manifest
+- name: Require the complete declared file set
   ansible.builtin.assert:
     that:
-    - pixel_runtime_adoption_sources is sequence
-    - pixel_runtime_adoption_sources is not string
-    - pixel_runtime_adoption_sources | length == pixel_runtime_source_layout | length
-    - pixel_runtime_adoption_sources | map(attribute='template') | list | sort == pixel_runtime_source_layout.keys()
+    - pixel_runtime_files is sequence
+    - pixel_runtime_files is not string
+    - pixel_runtime_files | length == pixel_runtime_file_layout | length
+    - pixel_runtime_files | map(attribute='template') | list | sort == pixel_runtime_file_layout.keys()
       | list | sort
-    - pixel_runtime_adoption_sources | map(attribute='dest') | unique | length == pixel_runtime_adoption_sources
+    - pixel_runtime_files | map(attribute='dest') | unique | length == pixel_runtime_files
       | length
     quiet: true
-    fail_msg: Missing, duplicate or incomplete adoption baseline; do not infer a fresh host.
-- name: Validate each source path and immutable fingerprint
+    fail_msg: Missing, duplicate or incomplete managed file definitions.
+- name: Validate each managed destination and its permissions
   ansible.builtin.assert:
     that:
-    - item.dest == pixel_runtime_source_layout[item.template]
+    - item.dest == pixel_runtime_file_layout[item.template]
     - item.dest is match('^/[A-Za-z0-9_./-]+$')
     - "'..' not in item.dest.split('/')"
     - "'.' not in item.dest.split('/')"
     - "'//' not in item.dest"
-    - item.sha256 is match('^[a-f0-9]{64}$')
     - item.uid is integer
     - item.gid is integer
     - item.uid >= 0
@@ -42,20 +40,19 @@
     - item.mode is match('^[0-7]{3,4}$')
     - not item.mode.startswith('0')
     quiet: true
-    fail_msg: Adoption manifest is outside the declared package or has an invalid fingerprint.
-  loop: '{{ pixel_runtime_adoption_sources }}'
+    fail_msg: Managed file definitions are outside the declared package or have invalid permissions.
+  loop: '{{ pixel_runtime_files }}'
   loop_control:
     label: '{{ item.dest }}'
-- name: Render desired sources and require captured bytes in audit mode
+- name: Render every desired script before connecting
   vars:
     rendered_source: "{{ lookup('ansible.builtin.template', item.template, rstrip=False) }}"
   ansible.builtin.assert:
     that:
       - rendered_source | length > 0
-      - photo_backup_operation | default('manage') != 'audit' or rendered_source | hash('sha256') == item.sha256
     quiet: true
-    fail_msg: Empty source or rendered bytes differ from the captured audit baseline.
-  loop: '{{ pixel_runtime_adoption_sources }}'
+    fail_msg: A required script rendered empty.
+  loop: '{{ pixel_runtime_files }}'
   loop_control:
     label: '{{ item.dest }}'
   no_log: true

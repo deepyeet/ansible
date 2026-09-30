@@ -20,8 +20,8 @@
     group: '{{ item.gid | string }}'
     mode: '{{ item.mode }}'
   loop: >-
-    {{ (pixel_runtime_adoption_sources | rejectattr('template', 'equalto', 'farm-startup.sh.j2') | list)
-       + (pixel_runtime_adoption_sources | selectattr('template', 'equalto', 'farm-startup.sh.j2') | list) }}
+    {{ (pixel_runtime_files | rejectattr('template', 'equalto', 'farm-startup.sh.j2') | list)
+       + (pixel_runtime_files | selectattr('template', 'equalto', 'farm-startup.sh.j2') | list) }}
   loop_control:
     label: '{{ item.dest }}'
   check_mode: '{{ pixel_runtime_plan_only | default(ansible_check_mode) }}'

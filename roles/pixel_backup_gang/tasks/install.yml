@@ -18,7 +18,7 @@
     owner: '{{ item.uid | string }}'
     group: '{{ item.gid | string }}'
     mode: '{{ item.mode }}'
-  loop: '{{ pbg_adoption_sources }}'
+  loop: '{{ pbg_files }}'
   loop_control:
     label: '{{ item.dest }}'
   check_mode: '{{ pbg_plan_only | default(ansible_check_mode) }}'

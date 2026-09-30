@@ -15,7 +15,7 @@ if [ -e "$p" ]; then
   h=$(sha256sum "$p")
   m=$(stat -c '%u|%g|%a' "$p")
   if [ "${h%% *}" = {{ lookup('ansible.builtin.template', 'pixel_manager.sh.j2', rstrip=False) | hash('sha256') | quote }} ] &&
-     [ "$m" = "$uid|$gid|{{ photo_ingest_adoption_sources[0].mode }}" ]; then
+     [ "$m" = "$uid|$gid|{{ photo_ingest_files[0].mode }}" ]; then
     echo MATCH
     exit 0
   fi

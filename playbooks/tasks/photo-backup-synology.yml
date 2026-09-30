@@ -12,6 +12,6 @@
       - "'PREREQUISITES_OK' in photo_synology_observation.stdout_lines"
     quiet: true
 
-- name: Report source matching and the unverified privileged prerequisites separately
+- name: Report the inspected DSM prerequisites and remaining unknowns
   ansible.builtin.debug:
     msg: '{{ photo_synology_observation.stdout_lines }}'

@@ -27,13 +27,13 @@ healthy. Startup's kernel panic settings are a separate crash-recovery mechanism
 - `pixel_runtime_config`: storage paths, drive UUID, timing, health thresholds,
   kernel policy and UI coordinates; [argument schema](meta/argument_specs.yml).
 - `pixel_runtime_healthcheck_url`: supplied from Vault; never printed. The running health worker contacts it.
-- `pixel_runtime_adoption_sources`: reviewed fingerprints for all four sources.
+- `pixel_runtime_files`: desired destination, template, UID, GID and mode for all four sources.
 
 `main` manages rendered sources, with the executable Magisk hook published
 last. Standalone `main` plans then applies. The pipeline uses `plan` and `apply`
-separately to inspect prerequisites once. `validate` renders locally. `audit`
-checks the historical source baseline and installed mount/worker state. Source
-changes require `pixel_runtime_maintenance_ready` from the play's observed
+separately to inspect prerequisites once. `validate` checks inputs and rendering
+locally. `status` checks prerequisites and installed mount/worker state without
+writes. Source changes require `pixel_runtime_maintenance_ready` from the play's observed
 controller state. Matching files need no maintenance window or write.
 
 `activate` is the standalone plan/start entrypoint. The activation play uses

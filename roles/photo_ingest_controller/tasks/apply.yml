@@ -10,7 +10,6 @@
 - name: Require a coordinated maintenance window for controller changes
   ansible.builtin.assert:
     that:
-      - photo_backup_operation | default('manage') == 'manage'
       - not photo_ingest_plan.changed or photo_ingest_maintenance_ready | default(false) | bool or ansible_check_mode
     fail_msg: Pause the controller schedule before changing the manager.
     quiet: true
@@ -37,7 +36,7 @@
         dest: '{{ photo_ingest.state_dir }}/pixel_manager.sh'
         owner: '{{ photo_ingest_file_owner }}'
         group: '{{ photo_ingest_file_group }}'
-        mode: '{{ photo_ingest_adoption_sources[0].mode }}'
+        mode: '{{ photo_ingest_files[0].mode }}'
         follow: false
         backup: false
         validate: /bin/bash -n %s
@@ -60,6 +59,6 @@
           - photo_ingest_installed.stat.checksum == lookup('ansible.builtin.template', 'pixel_manager.sh.j2', rstrip=False) | hash('sha256')
           - photo_ingest_installed.stat.pw_name == photo_ingest_file_owner
           - photo_ingest_installed.stat.gr_name == photo_ingest_file_group
-          - photo_ingest_installed.stat.mode | int == photo_ingest_adoption_sources[0].mode | int
+          - photo_ingest_installed.stat.mode | int == photo_ingest_files[0].mode | int
         quiet: true
       no_log: true

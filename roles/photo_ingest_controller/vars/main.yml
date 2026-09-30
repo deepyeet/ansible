@@ -1,3 +1,3 @@
-# Package contents and destinations; observed hashes belong to host inventory.
-photo_ingest_source_layout:
+# Required templates and allowed destinations for the declared file set.
+photo_ingest_file_layout:
   pixel_manager.sh.j2: '{{ photo_ingest.state_dir }}/pixel_manager.sh'

@@ -12,7 +12,6 @@
 - name: Require managed sources and observed controller quiescence
   ansible.builtin.assert:
     that:
-      - photo_backup_operation | default('manage') == 'manage'
       - not pixel_runtime_cold or pixel_runtime_maintenance_ready | default(false) | bool or ansible_check_mode
     quiet: true
 

@@ -1,0 +1,6 @@
+# Desired script destinations and permissions; script content is rendered by each role.
+photo_managed_files:
+  photo_ingest_controller:
+  - dest: /volume1/homes/admin/pixel_manager.sh
+    template: pixel_manager.sh.j2
+    mode: '777'

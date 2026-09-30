@@ -1,5 +1,4 @@
-"""Adoption acceptance on local fixtures. SSH is replaced by a failing stub."""
-import hashlib
+"""Configuration and read-only status contracts; live SSH is never used."""
 import os
 from pathlib import Path
 import subprocess
@@ -34,7 +33,7 @@ def render(path, variables):
 
 class LocalPlayTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix='photo-adoption-', dir='/tmp')
+        self.tmp = tempfile.TemporaryDirectory(prefix='photo-config-', dir='/tmp')
         self.addCleanup(self.tmp.cleanup)
         self.work = Path(self.tmp.name)
         self.calls = self.work / 'ssh-calls'
@@ -47,10 +46,9 @@ class LocalPlayTests(unittest.TestCase):
                         ANSIBLE_DISPLAY_ARGS_TO_STDOUT='false')
         self.env.pop('ANSIBLE_LOG_PATH', None)
 
-    def run_play(self, extras=None, limit=None, play='playbooks/photo-backup-audit.yml',
+    def run_play(self, extras=None, limit=None, play='playbooks/photo-backup-validate.yml',
                  extra_args=(), inventory=None):
         args = ['ansible-playbook', play]
-        extras = {'photo_backup_operation': 'audit', **(extras or {})}
         if extras is not None:
             path = self.work / 'extra.yml'
             path.write_text(yaml.safe_dump(extras))
@@ -71,7 +69,7 @@ class LocalPlayTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn('failed=1', result.stdout)
 
-    def test_current_manifests_render_exactly_without_ssh(self):
+    def test_current_files_render_without_ssh(self):
         result = self.run_play(play='playbooks/photo-backup-validate.yml')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout.count('changed=0'), 2)
@@ -86,36 +84,33 @@ class LocalPlayTests(unittest.TestCase):
                 self.assertTrue(not value or value not in reported,
                                 'Vault value appeared in local validation output')
 
-    def test_unsupported_operations_fail_before_ssh(self):
-        for value in ['bootstrap', 'provision', 'install']:
-            with self.subTest(operation=value):
-                self.rejected({'photo_backup_operation': value})
-
     def test_inventory_become_override_fails_before_ssh(self):
         self.rejected({'ansible_become': True})
 
-    def test_parameter_drift_fails_before_any_host_connects(self):
+    def test_receiver_parameter_edits_are_valid_desired_configuration(self):
         config = read_yaml('host_vars/pixel1/vars.yml')
         config['pixel_runtime_config']['health_interval'] += 1
-        self.rejected(config)
+        result = self.run_play(config)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_controller_parameter_drift_fails_before_pixel_connects(self):
+    def test_controller_parameter_edits_are_valid_desired_configuration(self):
         config = read_yaml('host_vars/ds223j/vars.yml')
         config['photo_ingest']['ingest_age'] += 1
-        self.rejected(config)
+        result = self.run_play(config)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_absent_or_incomplete_baseline_fails_before_ssh(self):
-        self.rejected({'photo_adoption_sources': {}}, limit='pixel1')
-        baseline = read_yaml('host_vars/pixel1/adoption.yml')
-        baseline['photo_adoption_sources']['pixel_backup_gang'].pop()
+    def test_absent_or_incomplete_file_definitions_fail_before_ssh(self):
+        self.rejected({'photo_managed_files': {}}, limit='pixel1')
+        baseline = read_yaml('host_vars/pixel1/files.yml')
+        baseline['photo_managed_files']['pixel_backup_gang'].pop()
         self.rejected(baseline, limit='pixel1')
 
     def test_unsafe_or_undeclared_manifest_paths_fail_before_ssh(self):
         for path in ['/tmp/other.sh', '/data/local/tmp/../unexpected',
                      '/data/local/tmp/bad;command']:
             with self.subTest(path=path):
-                baseline = read_yaml('host_vars/pixel1/adoption.yml')
-                baseline['photo_adoption_sources']['pixel_backup_gang'][0]['dest'] = path
+                baseline = read_yaml('host_vars/pixel1/files.yml')
+                baseline['photo_managed_files']['pixel_backup_gang'][0]['dest'] = path
                 self.rejected(baseline, limit='pixel1')
 
     def test_missing_peer_fails_with_receiver_only_limit(self):
@@ -168,7 +163,7 @@ class LocalPlayTests(unittest.TestCase):
             photo_group['vars'] = read_yaml('group_vars/photo_backup/vars.yml')
             pixel_host = photo_group['children']['photo_receivers']['hosts']['pixel1']
             pixel_host.update(read_yaml('host_vars/pixel1/vars.yml'))
-            pixel_host.update(read_yaml('host_vars/pixel1/adoption.yml'))
+            pixel_host.update(read_yaml('host_vars/pixel1/files.yml'))
             group = inventory['all']['children']['photo_backup']['children']['photo_controllers']
             group['hosts']['another_nas'] = {'ansible_host': '192.0.2.10'}
             extras = None
@@ -214,89 +209,10 @@ class LocalPlayTests(unittest.TestCase):
         self.assertNotIn('reset_and_free.sh', source)
 
 
-class ReadOnlyProbeTests(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix='photo-source-probe-', dir='/tmp')
-        self.addCleanup(self.tmp.cleanup)
-        self.work = Path(self.tmp.name)
-        self.source = self.work / 'sample.sh'
-        self.source.write_bytes(b'captured fixture\n')
-        self.source.chmod(0o600)
-
-    def run_probe(self, role, prefix, path=None):
-        command = render(f'roles/{role}/templates/audit/source-probe.sh.j2', {
-            prefix + '_adoption_sources': [{'dest': str(path or self.source)}]})
-        return subprocess.run(['/bin/sh', '-s'], input=command, text=True,
-                              capture_output=True, timeout=5)
-
-    def test_all_role_probes_read_without_changing_bytes_metadata_or_directory(self):
-        expected = 'FILE|{}|{}|{}|{}|600'.format(
-            self.source, hashlib.sha256(self.source.read_bytes()).hexdigest(), os.getuid(), os.getgid())
-        before = self.source.stat()
-        for role, prefix in ROLES.items():
-            result = self.run_probe(role, prefix)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stdout.strip(), expected)
-        after = self.source.stat()
-        fields = ['st_ino', 'st_mode', 'st_uid', 'st_gid', 'st_ctime_ns', 'st_mtime_ns', 'st_size']
-        self.assertEqual([getattr(before, f) for f in fields], [getattr(after, f) for f in fields])
-        self.assertEqual(list(self.work.iterdir()), [self.source])
-
-    def test_missing_source_is_not_created(self):
-        for role, prefix in ROLES.items():
-            self.assertEqual(self.run_probe(role, prefix, self.work / 'absent').returncode, 33)
-        self.assertFalse((self.work / 'absent').exists())
-
-    def test_symlink_source_and_ancestor_are_rejected(self):
-        alias = self.work / 'alias'
-        alias.symlink_to(self.source)
-        directory_alias = self.work / 'directory-alias'
-        directory_alias.symlink_to(self.work, target_is_directory=True)
-        for role, prefix in ROLES.items():
-            self.assertEqual(self.run_probe(role, prefix, alias).returncode, 33)
-            self.assertEqual(self.run_probe(role, prefix, directory_alias / 'sample.sh').returncode, 32)
-
-    def test_drift_is_reported_without_normalizing_it(self):
-        self.source.write_bytes(b'changed fixture\n')
-        self.source.chmod(0o644)
-        for role, prefix in ROLES.items():
-            result = self.run_probe(role, prefix)
-            self.assertEqual(result.returncode, 0)
-            self.assertIn(hashlib.sha256(b'changed fixture\n').hexdigest(), result.stdout)
-            self.assertTrue(result.stdout.strip().endswith('|644'))
-        self.assertEqual(self.source.read_bytes(), b'changed fixture\n')
-        self.assertEqual(self.source.stat().st_mode & 0o777, 0o644)
-
-    def test_actual_role_assertions_reject_content_and_mode_drift_without_repair(self):
-        expected = {'dest': str(self.source), 'sha256': hashlib.sha256(b'captured fixture\n').hexdigest(),
-                    'uid': os.getuid(), 'gid': os.getgid(), 'mode': '600'}
-        for role, prefix in ROLES.items():
-            for drift in ['none', 'bytes', 'mode']:
-                with self.subTest(role=role, drift=drift):
-                    self.source.write_bytes(b'wrong\n' if drift == 'bytes' else b'captured fixture\n')
-                    self.source.chmod(0o644 if drift == 'mode' else 0o600)
-                    before = self.source.stat()
-                    play = [{'hosts': 'localhost', 'gather_facts': False, 'become': False,
-                             'vars': {'ansible_become': False, prefix + '_adoption_sources': [expected]},
-                             'tasks': [{'name': 'Exercise actual inspection on one disposable source',
-                                        'ansible.builtin.include_role': {
-                                            'name': role, 'tasks_from': 'inspect', 'public': False}}]}]
-                    path = self.work / 'inspect.yml'
-                    path.write_text(yaml.safe_dump(play))
-                    env = dict(os.environ, ANSIBLE_CONFIG=str(ROOT / 'ansible.cfg'))
-                    result = subprocess.run(['ansible-playbook', '-i', 'localhost,', '-c', 'local', str(path)],
-                                            cwd=ROOT, env=env, text=True, capture_output=True, timeout=30)
-                    self.assertEqual(result.returncode, 0 if drift == 'none' else 2,
-                                     result.stdout + result.stderr)
-                    after = self.source.stat()
-                    self.assertEqual((before.st_ino, before.st_mtime_ns, before.st_ctime_ns, before.st_mode),
-                                     (after.st_ino, after.st_mtime_ns, after.st_ctime_ns, after.st_mode))
-                    if drift != 'none':
-                        self.assertIn('Source or metadata drift detected', result.stdout)
-
+class RuntimeProbeTests(unittest.TestCase):
     def test_runtime_and_scheduler_probe_shell_syntax(self):
         probes = [
-            ('roles/pixel_google_photos_runtime/templates/audit/runtime-probe.sh.j2',
+            ('roles/pixel_google_photos_runtime/templates/checks/runtime-probe.sh.j2',
              read_yaml('host_vars/pixel1/vars.yml')),
             ('playbooks/templates/photo-backup-synology-probe.sh.j2', read_yaml('host_vars/ds223j/vars.yml')),
         ]
@@ -307,48 +223,50 @@ class ReadOnlyProbeTests(unittest.TestCase):
 
 
 class RepositoryContractTests(unittest.TestCase):
-    def test_local_and_live_entrypoints_are_literal_with_identical_role_inputs(self):
+    def test_local_and_plan_entrypoints_have_identical_role_inputs(self):
         for component in ['receiver', 'controller']:
-            live = read_yaml(f'playbooks/tasks/photo-backup-{component}-audit.yml')
+            live = read_yaml(f'playbooks/tasks/photo-backup-{component}-plan.yml')
             local = read_yaml(f'playbooks/tasks/photo-backup-{component}-validate.yml')
             self.assertEqual(len(live), len(local))
             for before, after in zip(live, local):
                 if 'ansible.builtin.include_role' in before:
-                    self.assertEqual(before['ansible.builtin.include_role']['tasks_from'], 'audit')
+                    self.assertEqual(before['ansible.builtin.include_role']['tasks_from'], 'plan')
                     self.assertEqual(after['ansible.builtin.include_role']['tasks_from'], 'validate')
                     self.assertEqual(before['vars'], after['vars'])
 
-    def test_explicit_audit_graph_has_only_controller_actions_and_readonly_raw(self):
-        allowed = {'assert', 'debug', 'include_role', 'include_tasks', 'import_tasks', 'raw'}
+    def test_status_graph_has_only_controller_actions_and_readonly_raw(self):
+        allowed = {'assert', 'debug', 'include_role', 'include_tasks',
+                   'import_tasks', 'import_playbook', 'raw'}
+        visited = set()
 
-        def walk(node):
+        def inspect(path):
+            path = path.resolve()
+            if path in visited:
+                return
+            visited.add(path)
+            walk(yaml.safe_load(path.read_text()), path)
+
+        def walk(node, path):
             if isinstance(node, list):
                 for value in node:
-                    walk(value)
+                    walk(value, path)
             elif isinstance(node, dict):
                 for key, value in node.items():
                     if key.startswith('ansible.builtin.'):
-                        self.assertIn(key.split('.')[-1], allowed)
-                        if key == 'ansible.builtin.raw':
+                        action = key.split('.')[-1]
+                        self.assertIn(action, allowed, str(path.relative_to(ROOT)))
+                        if action == 'raw':
                             self.assertIs(node['changed_when'], False)
                             self.assertIs(node['check_mode'], False)
                             self.assertIs(node['become'], False)
-                    walk(value)
+                        elif action in ['import_tasks', 'include_tasks', 'import_playbook']:
+                            inspect(path.parent / value)
+                        elif action == 'include_role':
+                            inspect(ROOT / 'roles' / value['name'] / 'tasks' /
+                                    (value.get('tasks_from', 'main') + '.yml'))
+                    walk(value, path)
 
-        # Management/activation now intentionally have mutation tasks. Preserve
-        # this historical contract for the explicit baseline audit entrypoints.
-        paths = [ROOT / 'playbooks/tasks' / ('photo-backup-' + name + '.yml')
-                 for name in ['topology', 'identity', 'pixel-contract', 'scheduler',
-                              'synology', 'receiver-audit', 'controller-audit',
-                              'receiver-validate', 'controller-validate']]
-        for role in ROLES:
-            paths.extend(p for p in (ROOT / 'roles' / role / 'tasks').glob('*.yml')
-                         if p.stem in ['audit', 'validate', 'validate_config',
-                                       'validate_endpoint', 'prerequisites',
-                                       'inspect', 'observe'])
-            self.assertFalse(list((ROOT / 'roles' / role / 'handlers').glob('*')))
-        for path in paths:
-            walk(yaml.safe_load(path.read_text()))
+        inspect(ROOT / 'playbooks/photo-backup-status.yml')
         for path in (ROOT / 'playbooks').glob('photo-backup*.yml'):
             for play in yaml.safe_load(path.read_text()):
                 if 'hosts' in play:
@@ -358,7 +276,7 @@ class RepositoryContractTests(unittest.TestCase):
     def test_observation_shell_contains_no_mutation_or_network_commands(self):
         paths = list((ROOT / 'playbooks/templates').glob('*probe*'))
         for role in ROLES:
-            paths.extend((ROOT / 'roles' / role / 'templates/audit').glob('*.j2'))
+            paths.extend((ROOT / 'roles' / role / 'templates/checks').glob('*.j2'))
             paths.extend((ROOT / 'roles' / role / 'files').glob('*.sh'))
         forbidden = ['chmod ', 'chown ', 'mkdir ', 'touch ', 'rm ', 'reboot',
                      'curl -', 'rsync -', 'mount -', ' --run ', ' > /', ' >> ']
@@ -373,7 +291,7 @@ class RepositoryContractTests(unittest.TestCase):
             for path in (ROOT / 'roles' / role).rglob('*'):
                 if path.is_file() and not path.name.startswith('.') and '__pycache__' not in path.parts:
                     for token in ['192.168.1.160', '192.168.1.253', 'photo_pipeline_id',
-                                  'photo_adoption_sources', 'hostvars[']:
+                                  'photo_managed_files', 'hostvars[']:
                         self.assertNotIn(token, path.read_text(), str(path.relative_to(ROOT)))
 
     def test_group_vaults_contain_only_their_health_url(self):

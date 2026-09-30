@@ -19,3 +19,7 @@ synology_photo_backup:
     task_id: 13
     name: Pixel Upload
     interval_minutes: 5
+
+# Expected effective UID for the management SSH login, separate from file ownership.
+photo_management_identity:
+  uid: 1026

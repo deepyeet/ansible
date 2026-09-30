@@ -3,7 +3,6 @@
 - name: Keep storage prerequisite inspection read-only and unelevated
   ansible.builtin.assert:
     that:
-      - photo_backup_operation | default('manage') in ['manage', 'audit']
       - not (ansible_become | default(false) | bool)
     quiet: true
 
@@ -39,7 +38,7 @@
         quiet: true
         fail_msg: >-
           The SSH shell is outside PID 1's mount namespace. Upstream's
-          start_global_shell.sh enters it with nsenter; this audit will not.
+          start_global_shell.sh enters it with nsenter; this inspection will not.
           Resolve the shell namespace before any future storage activation.
 
     - name: Require Magisk and the enabled SSH module to survive the next boot
@@ -74,7 +73,7 @@
           mode 600. Both the operator and NAS admin need authorization after a
           reset. This check does not establish which public keys are authorized.
 
-    - name: Require each command used by the storage helpers and source audit
+    - name: Require each command used by the storage helpers and file management
       ansible.builtin.assert:
         that: item.value
         quiet: true

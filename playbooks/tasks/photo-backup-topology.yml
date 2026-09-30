@@ -1,15 +1,14 @@
 ---
-- name: Require a supported operation and unprivileged management connection
+- name: Require the management connection and declared file definitions
   ansible.builtin.assert:
     that:
-      - photo_backup_operation | default('manage') in ['manage', 'audit']
       - ansible_connection == 'ssh'
       - not (ansible_become | default(false) | bool)
-      - photo_adoption_identity.uid is integer
-      - photo_adoption_identity.uid >= 0
-      - photo_adoption_sources is mapping
+      - photo_management_identity.uid is integer
+      - photo_management_identity.uid >= 0
+      - photo_managed_files is mapping
     quiet: true
-    fail_msg: Use manage or audit; keep global become disabled. A reviewed manifest is required.
+    fail_msg: Keep global become disabled and declare the managed files and management identity.
 
 - name: Require a nonempty explicit pipeline map
   ansible.builtin.assert:

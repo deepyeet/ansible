@@ -6,7 +6,7 @@
     tasks_from: validate
     public: false
   vars:
-    pbg_adoption_sources: '{{ photo_adoption_sources.pixel_backup_gang }}'
+    pbg_files: '{{ photo_managed_files.pixel_backup_gang }}'
 
 - name: Validate the custom boot, health and Photos cleanup runtime
   ansible.builtin.include_role:
@@ -14,5 +14,5 @@
     tasks_from: validate
     public: false
   vars:
-    pixel_runtime_adoption_sources: '{{ photo_adoption_sources.pixel_google_photos_runtime }}'
+    pixel_runtime_files: '{{ photo_managed_files.pixel_google_photos_runtime }}'
     pixel_runtime_healthcheck_url: '{{ vault_pixel_backup_healthcheck_url }}'

@@ -1,5 +1,5 @@
-# Package contents and destinations; observed hashes belong to host inventory.
-pixel_runtime_source_layout:
+# Required templates and allowed destinations for the declared file set.
+pixel_runtime_file_layout:
   farm-startup.sh.j2: /data/adb/service.d/farm-startup.sh
   my_drive_id.txt.j2: '{{ pixel_runtime_config.scripts_dir }}/my_drive_id.txt'
   pixel_health.sh.j2: '{{ pixel_runtime_config.scripts_dir }}/pixel_health.sh'

@@ -10,7 +10,6 @@
 - name: Require a coordinated maintenance window for source changes
   ansible.builtin.assert:
     that:
-      - photo_backup_operation | default('manage') == 'manage'
       - not (pixel_runtime_directory_result.changed or pixel_runtime_files_result.changed) or pixel_runtime_maintenance_ready | default(false) | bool or ansible_check_mode
     fail_msg: Pause the controller schedule before changing source files.
     quiet: true

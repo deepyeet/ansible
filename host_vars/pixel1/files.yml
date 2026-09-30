@@ -1,0 +1,69 @@
+# Desired script destinations and permissions; script content is rendered by each role.
+photo_managed_files:
+  pixel_google_photos_runtime:
+  - dest: /data/adb/service.d/farm-startup.sh
+    template: farm-startup.sh.j2
+    uid: 0
+    gid: 0
+    mode: '755'
+  - dest: /data/local/tmp/pixel-backup-gang/my_drive_id.txt
+    template: my_drive_id.txt.j2
+    uid: 0
+    gid: 0
+    mode: '644'
+  - dest: /data/local/tmp/pixel-backup-gang/pixel_health.sh
+    template: pixel_health.sh.j2
+    uid: 0
+    gid: 0
+    mode: '755'
+  - dest: /data/local/tmp/pixel-backup-gang/reset_and_free.sh
+    template: reset_and_free.sh.j2
+    uid: 0
+    gid: 0
+    mode: '755'
+  pixel_backup_gang:
+  - dest: /data/local/tmp/pixel-backup-gang/disable_tcp_debugging.sh
+    template: disable_tcp_debugging.sh.j2
+    uid: 0
+    gid: 1015
+    mode: '771'
+  - dest: /data/local/tmp/pixel-backup-gang/enable_tcp_debugging.sh
+    template: enable_tcp_debugging.sh.j2
+    uid: 0
+    gid: 1015
+    mode: '771'
+  - dest: /data/local/tmp/pixel-backup-gang/find_device.sh
+    template: find_device.sh.j2
+    uid: 0
+    gid: 1015
+    mode: '771'
+  - dest: /data/local/tmp/pixel-backup-gang/mount_ext4.sh
+    template: mount_ext4.sh.j2
+    uid: 0
+    gid: 1015
+    mode: '771'
+  - dest: /data/local/tmp/pixel-backup-gang/remount_vfat.sh
+    template: remount_vfat.sh.j2
+    uid: 0
+    gid: 1015
+    mode: '771'
+  - dest: /data/local/tmp/pixel-backup-gang/run_as_termux.sh
+    template: run_as_termux.sh.j2
+    uid: 0
+    gid: 1015
+    mode: '771'
+  - dest: /data/local/tmp/pixel-backup-gang/show_devices.sh
+    template: show_devices.sh.j2
+    uid: 0
+    gid: 1015
+    mode: '771'
+  - dest: /data/local/tmp/pixel-backup-gang/start_global_shell.sh
+    template: start_global_shell.sh.j2
+    uid: 0
+    gid: 1015
+    mode: '771'
+  - dest: /data/local/tmp/pixel-backup-gang/unmount.sh
+    template: unmount.sh.j2
+    uid: 0
+    gid: 1015
+    mode: '771'

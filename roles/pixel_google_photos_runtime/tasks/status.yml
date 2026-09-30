@@ -1,0 +1,5 @@
+---
+- name: Inspect drive, Photos and UI prerequisites
+  ansible.builtin.import_tasks: prerequisites.yml
+- name: Inspect the installed mount chain and farm workers
+  ansible.builtin.import_tasks: observe.yml

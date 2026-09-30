@@ -1,0 +1,31 @@
+---
+# Configuration and runtime inspection only. Use management --check for file drift.
+- name: Validate the declared pipeline locally
+  ansible.builtin.import_playbook: photo-backup-validate.yml
+
+- name: Inspect the Pixel platform, mounted storage and running farm
+  hosts: photo_receivers
+  gather_facts: false
+  become: false
+  any_errors_fatal: true
+  tasks:
+    - ansible.builtin.import_tasks: tasks/photo-backup-identity.yml
+    - name: Inspect Android storage and Magisk prerequisites
+      ansible.builtin.include_role:
+        name: pixel_backup_gang
+        tasks_from: prerequisites
+        public: false
+    - name: Inspect the installed Photos runtime
+      ansible.builtin.include_role:
+        name: pixel_google_photos_runtime
+        tasks_from: status
+        public: false
+
+- name: Inspect the manual DSM configuration
+  hosts: photo_controllers
+  gather_facts: false
+  become: false
+  any_errors_fatal: true
+  tasks:
+    - ansible.builtin.import_tasks: tasks/photo-backup-identity.yml
+    - ansible.builtin.import_tasks: tasks/photo-backup-synology.yml

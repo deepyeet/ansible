@@ -71,20 +71,20 @@ ansible-playbook playbooks/photo-backup.yml --check
 # Manage both installations. Also imported by site.yml --limit photo_backup.
 ansible-playbook playbooks/photo-backup.yml
 
-# Historical baseline + installed runtime inspection; always read-only.
-ansible-playbook playbooks/photo-backup-audit.yml --check
+# Inspect the installed runtime and manual DSM setup; always read-only.
+ansible-playbook playbooks/photo-backup-status.yml --check
 
 # Separate, explicit operation: preview, then start a completely stopped farm.
 ansible-playbook playbooks/photo-backup-activate.yml --check
 ansible-playbook playbooks/photo-backup-activate.yml
 ```
 
-`photo_backup_operation` defaults to `manage`; the audit play binds `audit`.
-The manifests retain their `adoption` names: destinations/owners/modes are the
-installation recipe, while hashes record the original captured baseline. **Only
-baseline audits require the old hashes.** Normal management renders the current
-variables and compares those desired bytes to the host; ordinary variable edits
-therefore produce a visible change. Do not regenerate old hashes to hide drift.
+The `host_vars/*/files.yml` definitions declare templates, destinations and
+permissions. Role inputs supply script parameters; Vault supplies secrets.
+Management renders those inputs and compares the desired bytes and metadata
+to the host. Ordinary variable edits therefore produce a visible change.
+Use management with `--check` to inspect file drift, and the status play to
+inspect platform prerequisites, mounts, workers and manual DSM setup.
 
 ### Changes require an idle controller
 
@@ -100,7 +100,7 @@ The pipeline runs all plans first and then calls `apply`, avoiding a second full
 platform preflight. Applying still compares each destination immediately before
 writes. The Android action's `allow_changes` gate blocks a newly drifted file
 when an earlier no-change plan did not establish a maintenance window. Source
-rendering and baseline comparison share one validation task.
+rendering is validated locally before connecting to either host.
 
 Activation similarly reuses the source plan, then rechecks mount/worker state
 after controller inspection. That last state check protects against concurrent
@@ -196,8 +196,8 @@ start it once these requirements hold.
    are partial. Inspect the current Photos menus against the cleanup coordinates.
    A controlled disposable-media exercise is needed before enabling unattended
    cleanup; a shell exit code cannot verify that the correct button was tapped.
-7. **Inspect the installed farm and NAS access.** Run the baseline/runtime audit, verify the
-   NAS admin's own SSH key and reviewed host key, then the full pipeline audit.
+7. **Inspect the installed farm and NAS access.** Run the status play and
+   management with `--check`. Verify the NAS admin's own SSH key and reviewed host key.
    Check received health reports and dashboard grace periods. Restore scheduled
    transfers only after these conditions and the manual checks hold.
 
@@ -220,26 +220,30 @@ start it once these requirements hold.
 - **Cloud completion:** NAS treats local disappearance as completion. Manual
   deletion or incorrect UI cleanup can produce false completion. No Google API
   receipt or end-to-end content verification is implemented.
-- **Reproducibility:** captured helper bytes are pinned; the upstream revision
-  is unknown. The inspected platform was Magisk `30.7`, SSH module `v0.27`,
+- **Reproducibility:** captured helper bytes are versioned in this repository;
+  the upstream revision is unknown. The inspected platform was Magisk `30.7`,
+  SSH module `v0.27`,
   ACC `v2025.5.18-dev`, and Photos `7.57.0.843750501`. These are observations,
   not upgrade targets. Module/APK recovery artifacts, Google setup, ACC policy,
   and Healthchecks dashboard configuration remain outside automation.
 
 ## Verification scope
 
-On 2026-09-30, both **check mode and a normal management run** reported
-`changed=0`, `unreachable=0`, `failed=0` on both live hosts. The subsequent
-read-only baseline audit also passed, including exact captured source hashes,
-metadata and the Pixel runtime checks. Activation check mode recognized the
-running farm and proposed no startup.
+Before this cleanup, check mode and a normal management run reported
+`changed=0`, `unreachable=0`, `failed=0` on both live hosts. The normal run
+traversed the actual file-management path.
 
-The old audit alone had not established writable idempotence: the new management
-runs traversed the actual file-management path. Python/YAML parsing and rendered
-activation-shell syntax were checked locally. Fresh installation, authenticated
+For this cleanup, all 14 rendered files matched their previous hashes and
+retained their deployment settings. Management, read-only status and activation
+check mode passed on both live hosts with zero changes. Activation recognized
+the running farm and proposed no startup. The 31 local tests passed; writer
+logic and deployed source templates were unchanged.
+
+Python/YAML parsing and rendered activation-shell syntax were checked locally.
+Fresh installation, authenticated
 NAS sudo and cold activation have not been exercised on disposable hardware.
-The photo backup test suite covers local validation/audit boundaries and the
-actual Android writer against disposable files. Writer cases include unchanged
+The photo backup test suite covers local validation, read-only status boundaries
+and the actual Android writer against disposable files. Writer cases include unchanged
 files, check mode, writes blocked outside maintenance, atomic install/update,
 empty files, symlinks and a concurrent edit between inspection and publication.
-The adoption tests target the explicit audit entrypoint; they never use live SSH.
+Configuration tests use the local validation entrypoint; they never use live SSH.

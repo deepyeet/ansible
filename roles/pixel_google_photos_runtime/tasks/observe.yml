@@ -1,6 +1,6 @@
 ---
 - name: Read mount sources, canaries, Photos namespace and worker processes
-  ansible.builtin.raw: "{{ lookup('ansible.builtin.template', 'audit/runtime-probe.sh.j2') }}"
+  ansible.builtin.raw: "{{ lookup('ansible.builtin.template', 'checks/runtime-probe.sh.j2') }}"
   register: pixel_runtime_observation
   become: false
   check_mode: false
@@ -57,7 +57,7 @@
         fail_msg: >-
           NAS transfer requires .staging and incoming on this drive so promotion
           uses a same-filesystem rename. A .nomedia in incoming or the receiver
-          root would conflict with scanning completed photos. This audit does
+          root would conflict with scanning completed photos. This inspection does
           not establish whether Photos actually excludes the hidden staging folder.
 
     - name: Require Photos to see the drive and exactly one copy of each farm worker

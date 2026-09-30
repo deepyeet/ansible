@@ -26,15 +26,14 @@ The nine source templates preserve the existing helper bundle. The custom
 
 - `pbg_config`: `helpers_dir`, `drive_mount`, `bind_path`; see the typed
   [argument schema](meta/argument_specs.yml).
-- `pbg_adoption_sources`: complete reviewed list of destination, template,
-  SHA256, UID, GID and mode. Supplied by host inventory, never discovered or updated.
+- `pbg_files`: complete desired list of destination, template, UID, GID and mode.
+  Supplied explicitly by the play from host inventory.
 
 `main` manages the helper directory and rendered source files through the
 repository's Python-free `android_file` action. `plan` predicts those changes
 without writes; `apply` consumes that plan. The pipeline uses `plan` then `apply`
-once; standalone `main` performs both. `validate` checks rendering locally. `audit` is the
-explicit historical-baseline inspection. Only audit pins rendered bytes to old
-hashes. Missing files are installed in management mode; symlinks fail closed.
+once; standalone `main` performs both. `validate` checks inputs and rendering
+locally. Missing files are installed in management mode; symlinks fail closed.
 
 Changing sources requires `pbg_maintenance_ready`, supplied by the play after
 observing the paused/idle controller. Check mode and matching resources need no
