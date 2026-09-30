@@ -1,7 +1,7 @@
 ---
 argument_specs:
   main:
-    short_description: Inspect captured sources without remote changes
+    short_description: Manage the declared source files without restarting the farm
     options: &adoption_options
       pixel_runtime_adoption_sources:
         type: list
@@ -127,3 +127,21 @@ argument_specs:
     short_description: Inspect drive identity and Photos setup without installed farm scripts
     options:
       pixel_runtime_config: *runtime_config
+  plan:
+    short_description: Inspect prerequisites and predict source changes without writing
+    options: *adoption_options
+  audit:
+    short_description: Require the captured baseline and inspect installed state
+    options: *adoption_options
+  activation_state:
+    short_description: Classify the farm as stopped, running or unsafe to start
+    options: *adoption_options
+  activate:
+    short_description: Explicitly start a cold farm during a controller maintenance window
+    options: *adoption_options
+  apply:
+    short_description: Apply a preceding source plan without repeating platform inspection
+    options: *adoption_options
+  start:
+    short_description: Start a previously planned installation with a fresh runtime state check
+    options: *adoption_options

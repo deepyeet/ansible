@@ -32,3 +32,10 @@
     quiet: true
   no_log: true
   diff: false
+
+- name: Require explicit local ownership names for the manager
+  ansible.builtin.assert:
+    that:
+      - photo_ingest_file_owner is match('^[a-z_][a-z0-9_-]*$')
+      - photo_ingest_file_group is match('^[a-z_][a-z0-9_-]*$')
+    quiet: true

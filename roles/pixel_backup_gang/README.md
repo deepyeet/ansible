@@ -29,15 +29,17 @@ The nine source templates preserve the existing helper bundle. The custom
 - `pbg_adoption_sources`: complete reviewed list of destination, template,
   SHA256, UID, GID and mode. Supplied by host inventory, never discovered or updated.
 
-`tasks/main.yml` validates inputs and exact rendering, checks Android/Magisk
-prerequisites, then reads source hashes and metadata. `tasks/validate.yml` runs
-source preflight entirely on the controller. Neither entry point installs or executes
-helpers. Missing sources, symlinks and drift fail without repair. Raw reads avoid
-Python/module staging on Android and work with or without `--check`.
+`main` manages the helper directory and rendered source files through the
+repository's Python-free `android_file` action. `plan` predicts those changes
+without writes; `apply` consumes that plan. The pipeline uses `plan` then `apply`
+once; standalone `main` performs both. `validate` checks rendering locally. `audit` is the
+explicit historical-baseline inspection. Only audit pins rendered bytes to old
+hashes. Missing files are installed in management mode; symlinks fail closed.
 
-`vars/main.yml` describes package contents; it contains no installation hashes.
-The small source probe is kept within this role so it can be transferred without
-a hidden dependency on another role. Fresh provisioning is a separate future batch.
+Changing sources requires `pbg_maintenance_ready`, supplied by the play after
+observing the paused/idle controller. Check mode and matching resources need no
+maintenance window. This role never mounts storage or executes helpers.
+The repository action plugin is required when transferring this role.
 
 `tasks/prerequisites.yml` can run before helpers exist. Its named assertions
 explain the root/global-namespace requirement, ext4/sdcardfs kernel support,
@@ -46,4 +48,4 @@ It reads key-file metadata, never key contents. It does not establish that the
 NAS's particular key is authorized.
 
 See [pipeline setup and recovery](../../playbooks/PHOTO_BACKUP.md) for the
-standalone prerequisite command, boot sequence, manual setup and missing bootstrap.
+standalone prerequisite command, boot sequence, manual setup, source management and separate activation.

@@ -21,7 +21,7 @@
   - role: users
   - role: dotfiles
 
-# Adoption only: these plays contain no provisioning or activation tasks.
-- name: Inspect the existing photo backup installation
+# Manage source files; activation remains a separate, explicit playbook.
+- name: Manage the photo backup installation
   ansible.builtin.import_playbook: playbooks/photo-backup.yml
   tags: [photo_backup]

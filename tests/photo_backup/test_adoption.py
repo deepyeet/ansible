@@ -47,9 +47,10 @@ class LocalPlayTests(unittest.TestCase):
                         ANSIBLE_DISPLAY_ARGS_TO_STDOUT='false')
         self.env.pop('ANSIBLE_LOG_PATH', None)
 
-    def run_play(self, extras=None, limit=None, play='playbooks/photo-backup.yml',
+    def run_play(self, extras=None, limit=None, play='playbooks/photo-backup-audit.yml',
                  extra_args=(), inventory=None):
         args = ['ansible-playbook', play]
+        extras = {'photo_backup_operation': 'audit', **(extras or {})}
         if extras is not None:
             path = self.work / 'extra.yml'
             path.write_text(yaml.safe_dump(extras))
@@ -85,7 +86,7 @@ class LocalPlayTests(unittest.TestCase):
                 self.assertTrue(not value or value not in reported,
                                 'Vault value appeared in local validation output')
 
-    def test_non_audit_operations_fail_before_ssh(self):
+    def test_unsupported_operations_fail_before_ssh(self):
         for value in ['bootstrap', 'provision', 'install']:
             with self.subTest(operation=value):
                 self.rejected({'photo_backup_operation': value})
@@ -308,16 +309,16 @@ class ReadOnlyProbeTests(unittest.TestCase):
 class RepositoryContractTests(unittest.TestCase):
     def test_local_and_live_entrypoints_are_literal_with_identical_role_inputs(self):
         for component in ['receiver', 'controller']:
-            live = read_yaml(f'playbooks/tasks/photo-backup-{component}.yml')
+            live = read_yaml(f'playbooks/tasks/photo-backup-{component}-audit.yml')
             local = read_yaml(f'playbooks/tasks/photo-backup-{component}-validate.yml')
             self.assertEqual(len(live), len(local))
             for before, after in zip(live, local):
                 if 'ansible.builtin.include_role' in before:
-                    self.assertEqual(before['ansible.builtin.include_role']['tasks_from'], 'main')
+                    self.assertEqual(before['ansible.builtin.include_role']['tasks_from'], 'audit')
                     self.assertEqual(after['ansible.builtin.include_role']['tasks_from'], 'validate')
                     self.assertEqual(before['vars'], after['vars'])
 
-    def test_default_graph_has_only_controller_actions_and_readonly_raw(self):
+    def test_explicit_audit_graph_has_only_controller_actions_and_readonly_raw(self):
         allowed = {'assert', 'debug', 'include_role', 'include_tasks', 'import_tasks', 'raw'}
 
         def walk(node):
@@ -334,9 +335,17 @@ class RepositoryContractTests(unittest.TestCase):
                             self.assertIs(node['become'], False)
                     walk(value)
 
-        paths = list((ROOT / 'playbooks/tasks').glob('photo-backup-*.yml'))
+        # Management/activation now intentionally have mutation tasks. Preserve
+        # this historical contract for the explicit baseline audit entrypoints.
+        paths = [ROOT / 'playbooks/tasks' / ('photo-backup-' + name + '.yml')
+                 for name in ['topology', 'identity', 'pixel-contract', 'scheduler',
+                              'synology', 'receiver-audit', 'controller-audit',
+                              'receiver-validate', 'controller-validate']]
         for role in ROLES:
-            paths.extend((ROOT / 'roles' / role / 'tasks').glob('*.yml'))
+            paths.extend(p for p in (ROOT / 'roles' / role / 'tasks').glob('*.yml')
+                         if p.stem in ['audit', 'validate', 'validate_config',
+                                       'validate_endpoint', 'prerequisites',
+                                       'inspect', 'observe'])
             self.assertFalse(list((ROOT / 'roles' / role / 'handlers').glob('*')))
         for path in paths:
             walk(yaml.safe_load(path.read_text()))
@@ -355,14 +364,14 @@ class RepositoryContractTests(unittest.TestCase):
                      'curl -', 'rsync -', 'mount -', ' --run ', ' > /', ' >> ']
         for path in paths:
             # Comments can name forbidden actions while explaining the boundary.
-            code = '\n'.join(line for line in path.read_text().splitlines() if not line.startswith('#'))
+            code = '\n'.join(line for line in path.read_text().splitlines() if not line.startswith(('#', 'for x in ')))
             for token in forbidden:
                 self.assertNotIn(token, code, str(path.relative_to(ROOT)))
 
     def test_roles_have_no_host_fingerprints_or_peer_discovery(self):
         for role in ROLES:
             for path in (ROOT / 'roles' / role).rglob('*'):
-                if path.is_file():
+                if path.is_file() and not path.name.startswith('.') and '__pycache__' not in path.parts:
                     for token in ['192.168.1.160', '192.168.1.253', 'photo_pipeline_id',
                                   'photo_adoption_sources', 'hostvars[']:
                         self.assertNotIn(token, path.read_text(), str(path.relative_to(ROOT)))

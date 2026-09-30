@@ -1,0 +1,18 @@
+---
+# Pipeline orchestration has already planned both endpoints. Reuse that plan;
+# the file action/comparison still rechecks live state immediately before writes.
+- name: Require a preceding source plan
+  ansible.builtin.assert:
+    that:
+      - pbg_directory_result is defined
+      - pbg_files_result is defined
+    quiet: true
+- name: Require a coordinated maintenance window for source changes
+  ansible.builtin.assert:
+    that:
+      - photo_backup_operation | default('manage') == 'manage'
+      - not (pbg_directory_result.changed or pbg_files_result.changed) or pbg_maintenance_ready | default(false) | bool or ansible_check_mode
+    fail_msg: Pause the controller schedule before changing source files.
+    quiet: true
+- name: Manage source files without mounting storage or restarting the farm
+  ansible.builtin.import_tasks: install.yml

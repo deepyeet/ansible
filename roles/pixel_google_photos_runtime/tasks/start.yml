@@ -1,0 +1,36 @@
+---
+# Sources were planned before the maintenance window. State is rechecked below.
+- name: Require the desired runtime to be installed
+  ansible.builtin.assert:
+    that:
+      - not pixel_runtime_directory_result.changed
+      - not pixel_runtime_files_result.changed
+    quiet: true
+    fail_msg: Install the desired runtime sources before activation.
+- name: Recheck the activation boundary immediately before acting
+  ansible.builtin.import_tasks: activation_state.yml
+- name: Require managed sources and observed controller quiescence
+  ansible.builtin.assert:
+    that:
+      - photo_backup_operation | default('manage') == 'manage'
+      - not pixel_runtime_cold or pixel_runtime_maintenance_ready | default(false) | bool or ansible_check_mode
+    quiet: true
+
+- name: Preview starting the stopped farm without touching the device
+  ansible.builtin.debug:
+    msg: Would mount the configured drive, launch Photos and workers, then establish the drive canary and transfer directories.
+  changed_when: true
+  when: pixel_runtime_cold and ansible_check_mode
+
+- name: Start the cold farm and establish state only on the verified external drive
+  ansible.builtin.raw: "{{ lookup('ansible.builtin.template', 'activate.sh.j2') }}"
+  register: pixel_activation_result
+  become: false
+  changed_when: "'ACTIVATED' in pixel_activation_result.stdout_lines"
+  when: pixel_runtime_cold and not ansible_check_mode
+  no_log: true
+  diff: false
+
+- name: Inspect the mounted farm and singleton workers
+  ansible.builtin.import_tasks: observe.yml
+  when: not (pixel_runtime_cold and ansible_check_mode)

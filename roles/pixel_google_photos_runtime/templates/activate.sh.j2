@@ -1,0 +1,77 @@
+#!/system/bin/sh
+# Explicit cold start only. The default management play never executes this.
+set -eu
+[ "$(id -u)" = 0 ]
+[ "$(readlink /proc/self/ns/mnt)" = "$(readlink /proc/1/ns/mnt)" ]
+[ "$(getprop sys.boot_completed)" = 1 ]
+bb=/data/adb/magisk/busybox
+drive={{ pixel_runtime_config.drive_mount | quote }}
+binding=/mnt/runtime/write/emulated/0/the_binding
+root=/storage/emulated/0/the_binding
+scripts={{ pixel_runtime_config.scripts_dir | quote }}
+uuid={{ ('UUID="' + pixel_runtime_config.drive_uuid + '"') | quote }}
+lock="$scripts/.ansible-activation"
+# A concurrent invocation fails closed. Never remove someone else's lock.
+mkdir "$lock"
+trap 'rmdir "$lock"' EXIT
+trap 'exit 1' HUP INT TERM
+
+device=$(blkid | awk -v uuid="$uuid" '{for (i=2;i<=NF;i++) if ($i==uuid) {sub(/:$/, "", $1); print $1}}')
+[ -b "$device" ]
+# Refuse any existing target mount or another mount of this device.
+awk -v drive="$drive" -v binding="$binding" -v root="$root" -v device="$device" '
+    $5==drive || $5==binding || $5==root {bad=1}
+    {for (i=7;i<=NF;i++) if ($i=="-" && $(i+2)==device) bad=1}
+    END {exit bad ? 1 : 0}' /proc/1/mountinfo
+ps -A -o ARGS | awk -v w="$scripts/watchdog_runner.sh" -v h="$scripts/pixel_health.sh" '
+    $NF==w || $NF==h || $NF=="/data/adb/service.d/farm-startup.sh" {bad=1}
+    END {exit bad ? 1 : 0}'
+for p in "$drive" "$binding" "$root"; do
+    [ ! -L "$p" ]
+    if [ -e "$p" ]; then
+        [ -d "$p" ]
+        [ -z "$(ls -A "$p")" ]
+    fi
+done
+
+# Match Magisk's BusyBox standalone shell environment. This captured hook mounts
+# storage, changes drive permissions and SELinux policy, and starts Photos plus
+# health/watchdog loops. It does not run the Free up space cleanup automation.
+ASH_STANDALONE=1 "$bb" timeout 150 "$bb" sh /data/adb/service.d/farm-startup.sh </dev/null >/dev/null 2>&1
+
+# The legacy hook can mask a mount error: validate independently BEFORE canary
+# creation. Never write through an internal-storage directory after a failure.
+awk -v drive="$drive" -v device="$device" '
+    $5==drive && $4=="/" && $6 ~ /(^|,)rw(,|$)/ {
+        for(i=7;i<=NF;i++) if($i=="-" && $(i+1)=="ext4" && $(i+2)==device) n++
+    } END {exit n!=1}' /proc/1/mountinfo
+for target in "$binding" "$root"; do
+    awk -v target="$target" -v source="$drive/the_binding" '
+        $5==target && $4=="/" && $6 ~ /(^|,)rw(,|$)/ {
+            for(i=7;i<=NF;i++) if($i=="-" && $(i+1)=="sdcardfs" && $(i+2)==source) n++
+        } END {exit n!=1}' /proc/1/mountinfo
+done
+[ ! -L "$drive/the_binding" ]
+# Keep an open directory reference on the external filesystem. Even an unmount
+# after validation must not redirect relative writes into internal storage.
+cd "$drive/the_binding"
+case "$(stat -f -c %T .)" in ext2/ext3|ext3|ext4) ;; *) exit 61;; esac
+for dir in .staging incoming; do
+    [ ! -L "$dir" ]
+    if [ -e "$dir" ]; then
+        [ -d "$dir" ]
+    else
+        mkdir "$dir"
+        chown 1015:1015 "$dir"
+        chmod 777 "$dir"
+    fi
+done
+[ ! -L .mount_check ]
+if [ -e .mount_check ]; then
+    [ -f .mount_check ]
+else
+    (set -C; : > .mount_check)
+    chown 1015:1015 .mount_check
+    chmod 777 .mount_check
+fi
+echo ACTIVATED

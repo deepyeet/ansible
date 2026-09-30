@@ -9,6 +9,7 @@ photo_ingest:
 # Manually configured DSM prerequisites, inspected by the Synology play tasks.
 synology_photo_backup:
   owner: admin
+  group: users
   volume:
     path: /volume1
     source: /dev/vg1/volume_1

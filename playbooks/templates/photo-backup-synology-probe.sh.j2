@@ -11,11 +11,12 @@ do
   [ ! -L "$p" ] && [ -d "$p" ] || exit 44
 done
 t=$(/usr/syno/bin/synoschedtask --get id={{ synology_photo_backup.schedule.task_id }} 2>&1) || :
-{% for expected in ['Name: [' + synology_photo_backup.schedule.name + ']', 'State: [enabled]', 'Owner: [' + synology_photo_backup.owner + ']', 'Repeat every [5] min (s) until [23]:[55]', 'Run time: [0]:[0]', 'Command: [bash ' + photo_ingest.state_dir + '/pixel_manager.sh]'] %}
+{% for expected in ['Name: [' + synology_photo_backup.schedule.name + ']', 'Owner: [' + synology_photo_backup.owner + ']', 'Repeat every [5] min (s) until [23]:[55]', 'Run time: [0]:[0]', 'Command: [bash ' + photo_ingest.state_dir + '/pixel_manager.sh]'] %}
 printf '%s\n' "$t" | grep -Fq {{ expected | quote }} || exit 45
 {% endfor %}
+printf '%s\n' "$t" | grep -Eq 'State: \[(enabled|disabled)\]' || exit 45
 echo PREREQUISITES_OK
-echo 'TASK_DEFINITION_MATCH: enabled admin task every five minutes'
+echo 'TASK_DEFINITION_MATCH: admin task configured every five minutes'
 echo 'UNKNOWN: authenticated sudo entitlement and admin SSH key/trust have not been verified'
 echo 'UNKNOWN: privileged task execution status is not accessible as the SSH login account'
 echo 'SOURCE_MATCH_ONLY: complete privileged adoption is not asserted'

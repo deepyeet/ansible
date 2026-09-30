@@ -1,0 +1,5 @@
+---
+- name: Validate prerequisites and compare desired runtime sources
+  ansible.builtin.import_tasks: plan.yml
+- name: Start the installed runtime
+  ansible.builtin.import_tasks: start.yml

@@ -1,9 +1,14 @@
 # Synology → Pixel photo backup
 
-**This repository currently audits the installation; it does not rebuild it.**
-The default site never installs scripts, creates drive markers, mounts storage,
-starts workers, changes Android settings, or upgrades packages. A successful
-audit means the checked requirements hold, not that Google has backed up a photo.
+Normal runs now **manage the declared source files**. Matching files and
+metadata cause no writes; changed or missing sources are installed. A complete
+plan for the selected hosts runs before deployment. Production's current files,
+ownership and permissions are preserved, including the legacy permission modes.
+
+Storage/runtime activation is a separate explicit play. Normal management does
+not mount storage, restart workers, send UI taps, run transfers or upgrade
+anything. Installing the Magisk hook enables it for the next boot. Installing a
+NAS manager makes it available to the manually configured DSM task.
 
 ## Responsibilities
 
@@ -52,48 +57,101 @@ Our hook waits for `sys.boot_completed` itself. An SSH shell can have a differen
 PATH: here `/sbin/magisk` exists although `magisk` is not found by name.
 See [Magisk boot scripts and BusyBox](https://topjohnwu.github.io/Magisk/guides.html#boot-scripts).
 
-## Executable checks
+## Commands and execution boundaries
 
 From the repository root, with the existing Vault password and SSH setup:
 
 ```sh
-# Prepared phone: does not need installed farm scripts or a mounted drive.
+# Prepared phone: no installed farm sources or mounted drive required.
 ansible-playbook playbooks/photo-backup-prerequisites.yml --check
 
-# Installed Pixel: includes source fingerprints, prerequisites and runtime checks.
-ansible-playbook playbooks/photo-backup.yml --limit pixel1 --check
-
-# Both installed endpoints, including manual DSM scheduler prerequisites.
+# Preview desired-state changes on both hosts. No remote writes in check mode.
 ansible-playbook playbooks/photo-backup.yml --check
+
+# Manage both installations. Also imported by site.yml --limit photo_backup.
+ansible-playbook playbooks/photo-backup.yml
+
+# Historical baseline + installed runtime inspection; always read-only.
+ansible-playbook playbooks/photo-backup-audit.yml --check
+
+# Separate, explicit operation: preview, then start a completely stopped farm.
+ansible-playbook playbooks/photo-backup-activate.yml --check
+ansible-playbook playbooks/photo-backup-activate.yml
 ```
 
-These entry points contain only assertions and read-only probes even without
-`--check`. Raw SSH avoids Python and remote module staging. Reads and SSH may
-produce normal OS access accounting; no task intentionally mutates either host.
+`photo_backup_operation` defaults to `manage`; the audit play binds `audit`.
+The manifests retain their `adoption` names: destinations/owners/modes are the
+installation recipe, while hashes record the original captured baseline. **Only
+baseline audits require the old hashes.** Normal management renders the current
+variables and compares those desired bytes to the host; ordinary variable edits
+therefore produce a visible change. Do not regenerate old hashes to hide drift.
+
+### Changes require an idle controller
+
+Check mode reports changes without requiring a maintenance window. Before a
+real source change or cold activation, disable **Pixel Upload** in DSM's Task
+Scheduler and let any current run finish. The play inspects the declared NAS
+peer even under `--limit pixel1`, checks the disabled task, the manager process,
+and its existing singleton lock. It does not disable or reenable the schedule.
+An unchanged management run bypasses this maintenance requirement entirely.
+
+Each role's `main` entrypoint performs `plan` then `apply` when used by itself.
+The pipeline runs all plans first and then calls `apply`, avoiding a second full
+platform preflight. Applying still compares each destination immediately before
+writes. The Android action's `allow_changes` gate blocks a newly drifted file
+when an earlier no-change plan did not establish a maintenance window. Source
+rendering and baseline comparison share one validation task.
+
+Activation similarly reuses the source plan, then rechecks mount/worker state
+after controller inspection. That last state check protects against concurrent
+startup and remains separate from the earlier classification.
+
+The no-op path reads over SSH, with no remote module staging. The Pixel uses
+[`android_file`](../action_plugins/android_file.py), a narrow controller action
+because Magisk SSH supplies no Python. It implements directory/file desired
+state, rejects symlinks, predicts changes in check mode, rechecks before writing,
+and sends file content over SSH stdin into a private same-filesystem staging
+directory before atomic rename. It returns no file diff. It manages source paths
+only, never external photo directories. See Ansible's guidance on
+[Python-free targets](https://docs.ansible.com/ansible/latest/collections/ansible/builtin/raw_module.html).
+
+On NAS, changed files use the standard `ansible.builtin.template` module with
+`become_user: root`, owner `admin`, group `users`, and the captured mode. Before
+that write, an `id -u` task must prove root access. Matching files need no sudo.
+For changes, add **`ansible_become_password` inside the encrypted**
+`group_vars/photo_controllers/vault.yml` using `ansible-vault edit`; never store
+it in plaintext variables or pass it on the command line. Authenticated NAS
+sudo has not yet been exercised. A denied escalation stops deployment.
+
+Templates containing health URLs use Vault inputs, `no_log: true`, and
+`diff: false`. There are no automatic backups containing plaintext secrets.
+Atomic replacement protects each file; installation across multiple files or
+hosts is not a transaction. On failure inspect the reported state and rerun;
+there is no automatic rollback, deletion, service restart or package upgrade.
+The runtime boot hook is published after its dependent sources.
+
+### What machine inspection establishes
 
 | Check | Reason | Defined in |
 | --- | --- | --- |
 | Android 10, ext4, sdcardfs, root/global namespace | Mounts must use the supported kernel storage model and be visible outside SSH | [storage prerequisites](../roles/pixel_backup_gang/tasks/prerequisites.yml) |
-| Magisk/BusyBox and enabled SSH module, autostart, key-file metadata | Today's SSH connection must not mask missing boot integration | [storage prerequisites](../roles/pixel_backup_gang/tasks/prerequisites.yml) |
-| Unique configured ext4 UUID | Device names change when USB devices reconnect | [runtime prerequisites](../roles/pixel_google_photos_runtime/tasks/prerequisites.yml) |
-| Photos enabled, storage permissions, unlocked primary user | Photos must be able to open the exposed media | [runtime prerequisites](../roles/pixel_google_photos_runtime/tasks/prerequisites.yml) |
-| Display size/density, portrait lock, event-device identity, no credential lock | Cleanup uses fixed raw input events; it cannot type a PIN | [runtime prerequisites](../roles/pixel_google_photos_runtime/tasks/prerequisites.yml) |
-| External mount → Android binding → Photos process mount | A directory or canary alone could refer to internal flash | [installed runtime](../roles/pixel_google_photos_runtime/tasks/observe.yml) |
-| Matching canary inode; staging/incoming on receiver filesystem | Protect against missing drive; permit same-filesystem promotion | [installed runtime](../roles/pixel_google_photos_runtime/tasks/observe.yml) |
-| Exactly one watchdog and health process; expected panic controls | Boot may exit before starting workers, or repeated startup may duplicate them | [installed runtime](../roles/pixel_google_photos_runtime/tasks/observe.yml) |
+| Magisk/BusyBox, enabled SSH module, persistent authorization | A current SSH connection must not mask missing boot integration | [storage prerequisites](../roles/pixel_backup_gang/tasks/prerequisites.yml) |
+| Unique ext4 UUID, Photos permissions, display/input profile | Drive selection and captured UI automation require these inputs | [runtime prerequisites](../roles/pixel_google_photos_runtime/tasks/prerequisites.yml) |
+| ext4 → sdcardfs → Photos process mount | A directory or canary alone could refer to internal flash | [installed runtime](../roles/pixel_google_photos_runtime/tasks/observe.yml) |
+| Matching canary inode; staging/incoming on the same filesystem | Guard against missing drive and support atomic promotion | [installed runtime](../roles/pixel_google_photos_runtime/tasks/observe.yml) |
+| One watchdog and health process | Detect incomplete or duplicated startup | [installed runtime](../roles/pixel_google_photos_runtime/tasks/observe.yml) |
 
-A failed check stops and explains the dependency. It does not repair the host.
-Process existence is a snapshot, not a liveness or cloud-completion test.
-
-Live inspection on 2026-09-30: the prerequisite play passed with 18 tasks;
-the Pixel-only installed audit passed with 62 tasks. Both reported `changed=0`,
-`unreachable=0`, and `failed=0`. No automated test suite or reset/recovery exercise
-was run for this change. The NAS was not re-audited in this pass.
+A successful source plan says whether Ansible would change managed files.
+It does not establish cloud upload, UI correctness or delivered health pings.
+Process existence is a snapshot, not a liveness test. Photos account, Original
+quality entitlement, folder backup, staging exclusion and cleanup safety still
+require manual inspection.
 
 ## Recovery after a phone reset
 
-This is the required sequence and the boundary for a future bootstrap play.
-**Steps that change the phone are not implemented by the current plays.**
+The phone platform, Google account, NAS accounts/volumes and DSM task remain
+manual prerequisites. Ansible installs the captured farm and can explicitly
+start it once these requirements hold.
 
 1. **Prepare Android/Magisk manually.** Use the supported Android 10 original
    Pixel platform. Enable the intended Magisk SSH module and its boot service.
@@ -113,33 +171,37 @@ This is the required sequence and the boundary for a future bootstrap play.
    does not require formatting the external drive. A replacement disk needs a
    separately reviewed preparation procedure compatible with this old kernel;
    copying an UUID into inventory does not prepare a disk.
-4. **Install captured sources — bootstrap implementation missing.** The manifests
-   in `host_vars/pixel1/adoption.yml` list exact destinations, owners, modes and
-   hashes. The future installer must render with Vault, place helpers in
-   `/data/local/tmp/pixel-backup-gang`, preserve `my_drive_id.txt`, and install the
-   executable hook at `/data/adb/service.d/farm-startup.sh` **last**. It must never
-   fetch current upstream over the captured local variant. `watchdog_runner.sh`
-   is generated by the hook, not a separately managed source. Existing files
-   that differ must stop installation, not be overwritten automatically.
-5. **Activate storage and establish drive state — separate explicit operation.**
-   First coordinate with the NAS scheduler so no transfer is active. Establish
-   the verified ext4 → sdcardfs chain in the global namespace. The external
-   `the_binding` subtree must contain `incoming`, `.staging`, and a real
-   `.mount_check`. The farm scripts never create that canary. On an existing
-   drive, retain it. On a new drive, create it only after proving the target
-   UUID is mounted; placing it on internal flash defeats the guard. Do not
-   blindly rerun the hook on a running farm: it can duplicate workers and mounts.
+4. **Install the desired sources.** Disable the NAS task and let its current run
+   finish. Run the management play with `--check`, review the proposed changes,
+   then run it normally. It creates the missing Android helper directory, copies
+   the captured helper/runtime sources, and publishes the Magisk hook last.
+   It never fetches upstream or installs modules/APKs. The NAS role assumes its
+   share, state directories, admin account and task already exist. A missing or
+   changed NAS script requires authenticated sudo as described above.
+5. **Activate explicitly.** Run the activation play. An already healthy running
+   farm is inspected without changes. A completely stopped/unmounted farm may
+   start only while the controller is disabled and idle. Partial mounts, existing
+   workers, a startup in progress, or nonempty unmounted target directories cause
+   failure. The guarded activation invokes the captured boot hook with Magisk's
+   BusyBox environment, verifies the actual ext4/sdcardfs chain, then creates
+   **only missing** `.staging`, `incoming`, and `.mount_check` on that verified
+   external filesystem. Existing drive state is retained. It never formats or
+   repairs a disk, kills workers, unmounts storage, runs Free up space, or reboots.
+   A failed activation leaves observed state for diagnosis; it does not blindly
+   retry startup. The temporary `.ansible-activation` directory is a singleton
+   lock; after an interrupted process, confirm it is dead before removing a
+   stranded lock manually.
 6. **Complete app setup with the mount present.** Enable backup for `incoming`
    in Photos. Establish that `.staging` is excluded from scanning while transfers
    are partial. Inspect the current Photos menus against the cleanup coordinates.
    A controlled disposable-media exercise is needed before enabling unattended
    cleanup; a shell exit code cannot verify that the correct button was tapped.
-7. **Inspect the installed farm and NAS access.** Run the Pixel audit, verify the
+7. **Inspect the installed farm and NAS access.** Run the baseline/runtime audit, verify the
    NAS admin's own SSH key and reviewed host key, then the full pipeline audit.
    Check received health reports and dashboard grace periods. Restore scheduled
    transfers only after these conditions and the manual checks hold.
 
-## Observed gaps to resolve before unattended bootstrap
+## Remaining limits and follow-ups
 
 - **Partial uploads:** staging is hidden and promotion follows successful rsync,
   but Photos' exclusion behavior is still unverified. The live `.staging` had
@@ -152,8 +214,9 @@ This is the required sequence and the boundary for a future bootstrap play.
   permissive. Current upstream uses a different labeling approach; these are
   deliberate follow-up changes, not an automatic upgrade.
 - **Boot failure:** a missing drive causes startup to exit before either worker
-  starts. Reconnecting a disk afterward does not rerun startup. A future
-  activation path needs explicit mount success and singleton-worker guards.
+  starts. Reconnecting a disk afterward does not rerun startup. The explicit
+  activation play handles only a fully stopped farm. Partial recovery still
+  needs diagnosis; it deliberately refuses to unmount or kill workers.
 - **Cloud completion:** NAS treats local disappearance as completion. Manual
   deletion or incorrect UI cleanup can produce false completion. No Google API
   receipt or end-to-end content verification is implemented.
@@ -162,3 +225,21 @@ This is the required sequence and the boundary for a future bootstrap play.
   ACC `v2025.5.18-dev`, and Photos `7.57.0.843750501`. These are observations,
   not upgrade targets. Module/APK recovery artifacts, Google setup, ACC policy,
   and Healthchecks dashboard configuration remain outside automation.
+
+## Verification scope
+
+On 2026-09-30, both **check mode and a normal management run** reported
+`changed=0`, `unreachable=0`, `failed=0` on both live hosts. The subsequent
+read-only baseline audit also passed, including exact captured source hashes,
+metadata and the Pixel runtime checks. Activation check mode recognized the
+running farm and proposed no startup.
+
+The old audit alone had not established writable idempotence: the new management
+runs traversed the actual file-management path. Python/YAML parsing and rendered
+activation-shell syntax were checked locally. Fresh installation, authenticated
+NAS sudo and cold activation have not been exercised on disposable hardware.
+The photo backup test suite covers local validation/audit boundaries and the
+actual Android writer against disposable files. Writer cases include unchanged
+files, check mode, writes blocked outside maintenance, atomic install/update,
+empty files, symlinks and a concurrent edit between inspection and publication.
+The adoption tests target the explicit audit entrypoint; they never use live SSH.

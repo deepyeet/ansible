@@ -1,8 +1,8 @@
 ---
-- name: Require the read-only adoption entry point
+- name: Require an explicit supported operation without global escalation
   ansible.builtin.assert:
     that:
-    - photo_backup_operation | default('audit') == 'audit'
+    - photo_backup_operation | default('manage') in ['manage', 'audit']
     - not (ansible_become | default(false) | bool)
     quiet: true
 - name: Validate the implementation inputs
@@ -46,12 +46,15 @@
   loop: '{{ pixel_runtime_adoption_sources }}'
   loop_control:
     label: '{{ item.dest }}'
-- name: Require rendered bytes to match the captured baseline
+- name: Render desired sources and require captured bytes in audit mode
+  vars:
+    rendered_source: "{{ lookup('ansible.builtin.template', item.template, rstrip=False) }}"
   ansible.builtin.assert:
     that:
-    - lookup('ansible.builtin.template', item.template, rstrip=False) | hash('sha256') == item.sha256
+      - rendered_source | length > 0
+      - photo_backup_operation | default('manage') != 'audit' or rendered_source | hash('sha256') == item.sha256
     quiet: true
-    fail_msg: Rendered source differs from the immutable baseline; no remote repair is permitted.
+    fail_msg: Empty source or rendered bytes differ from the captured audit baseline.
   loop: '{{ pixel_runtime_adoption_sources }}'
   loop_control:
     label: '{{ item.dest }}'

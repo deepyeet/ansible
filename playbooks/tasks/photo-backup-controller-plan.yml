@@ -5,7 +5,7 @@
 - name: Pass the declared peer endpoint to the ingest controller
   ansible.builtin.include_role:
     name: photo_ingest_controller
-    tasks_from: apply
+    tasks_from: plan
     public: false
   vars:
     # Topology preflight requires exactly one matching edge for each controller.
@@ -14,7 +14,6 @@
     photo_ingest_endpoint: >-
       {{ photo_peer.photo_receiver | combine({
         'address': photo_peer.photo_receiver.data_address | default(photo_peer.ansible_host)}) }}
-    photo_ingest_maintenance_ready: '{{ photo_maintenance_ready | default(false) }}'
     photo_ingest_file_owner: '{{ synology_photo_backup.owner }}'
     photo_ingest_file_group: '{{ synology_photo_backup.group }}'
     photo_ingest_adoption_sources: '{{ photo_adoption_sources.photo_ingest_controller }}'

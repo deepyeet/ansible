@@ -3,7 +3,7 @@
 - name: Keep storage prerequisite inspection read-only and unelevated
   ansible.builtin.assert:
     that:
-      - photo_backup_operation | default('audit') == 'audit'
+      - photo_backup_operation | default('manage') in ['manage', 'audit']
       - not (ansible_become | default(false) | bool)
     quiet: true
 
@@ -47,6 +47,8 @@
         that:
           - storage.magisk_available
           - storage.magisk_busybox_available
+          - storage.busybox_atomic_rename
+          - storage.busybox_timeout
           - storage.ssh_module_installed
           - storage.ssh_module_enabled
           - storage.ssh_module_kept

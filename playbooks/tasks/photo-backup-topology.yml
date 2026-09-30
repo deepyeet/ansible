@@ -1,15 +1,15 @@
 ---
-- name: Require audit operation and SSH without privilege escalation
+- name: Require a supported operation and unprivileged management connection
   ansible.builtin.assert:
     that:
-      - photo_backup_operation | default('audit') == 'audit'
+      - photo_backup_operation | default('manage') in ['manage', 'audit']
       - ansible_connection == 'ssh'
       - not (ansible_become | default(false) | bool)
       - photo_adoption_identity.uid is integer
       - photo_adoption_identity.uid >= 0
       - photo_adoption_sources is mapping
     quiet: true
-    fail_msg: Adoption only inspects existing hosts; a reviewed baseline is required.
+    fail_msg: Use manage or audit; keep global become disabled. A reviewed manifest is required.
 
 - name: Require a nonempty explicit pipeline map
   ansible.builtin.assert:

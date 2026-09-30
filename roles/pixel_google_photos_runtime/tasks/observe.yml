@@ -13,6 +13,8 @@
     - name: Require the configured external drive behind both Android mount paths
       ansible.builtin.assert:
         that:
+          - farm.external_mount_count == 1
+          - farm.android_mount_count == 2
           - farm.external_ext4_mounted
           - farm.android_write_binding
           - farm.android_shared_storage

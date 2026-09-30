@@ -66,3 +66,9 @@ printf '%s\n' "$processes" | awk \
     END {printf "watchdog_processes: %d\nhealth_processes: %d\n",w,h}'
 emit panic_delay_matches test "$(cat /proc/sys/kernel/panic)" = {{ pixel_runtime_config.panic_delay | string | quote }}
 emit softlockup_policy_matches test "$(cat /proc/sys/kernel/softlockup_panic)" = {{ pixel_runtime_config.softlockup_panic | string | quote }}
+# Activation distinguishes a cold farm from partial or duplicated mounts.
+awk -v drive="$drive" -v binding="$binding" -v root="$root" '
+    $5==drive {d++} $5==binding || $5==root {b++}
+    END {printf "external_mount_count: %d\nandroid_mount_count: %d\n",d,b}' /proc/1/mountinfo
+printf '%s\n' "$processes" | awk -v startup=/data/adb/service.d/farm-startup.sh '
+    $NF==startup {n++} END {printf "startup_processes: %d\n",n}'

@@ -16,14 +16,22 @@ role's transfer contract; broad OS compatibility has not been tested.
 - `photo_ingest`: queue/state directories, SSH key path and timing policy.
 - `photo_ingest_endpoint`: address, data SSH identity/port, root, cleanup argv,
   protocol and completion semantics.
+- `photo_ingest_file_owner`, `photo_ingest_file_group`: supplied by the platform adapter.
 - `photo_ingest_healthcheck_url`: explicit value supplied from Vault.
 - `photo_ingest_adoption_sources`: reviewed manager destination/hash/UID/GID/mode.
 
-All inputs have a typed [argument schema](meta/argument_specs.yml). `tasks/main.yml`
-validates them, renders the captured manager in memory and reads its deployed
-hash and metadata. `tasks/validate.yml` performs only the local preflight.
-Changed or absent sources fail; no task creates, replaces or normalizes them.
-The role never runs the manager, rsync, remote cleanup or healthcheck calls.
+All inputs have a typed [argument schema](meta/argument_specs.yml). `main`
+plans then manages the rendered manager using the native template module; `plan` predicts
+changes without writes or sudo; `validate` checks inputs/rendering locally.
+`apply` consumes a preceding plan and refreshes only the file comparison.
+The pipeline runs platform/source preflight once before applying. `audit` requires
+the historical source hash and metadata without repair.
+
+A matching source never invokes remote modules or sudo. A changed source needs
+`photo_ingest_maintenance_ready` from the play's paused/idle scheduler observation
+and authenticated root escalation to publish an admin:users-owned file. Check
+mode only reports that change. Secret content is neither logged nor diffed.
+The role never runs the manager, rsync, cleanup or healthcheck calls.
 
 The play resolves the peer and the DSM adapter inspects manually configured
 accounts, storage and scheduling. The controller role itself needs neither

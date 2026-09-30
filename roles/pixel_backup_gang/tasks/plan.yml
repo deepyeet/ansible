@@ -1,0 +1,9 @@
+---
+- name: Validate package inputs
+  ansible.builtin.import_tasks: validate.yml
+- name: Inspect Android storage prerequisites
+  ansible.builtin.import_tasks: prerequisites.yml
+- name: Predict source changes without writing
+  ansible.builtin.import_tasks: install.yml
+  vars:
+    pbg_plan_only: true

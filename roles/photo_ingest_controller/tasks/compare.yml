@@ -1,0 +1,7 @@
+---
+- name: Compare the desired controller source without module staging or sudo
+  ansible.builtin.raw: "{{ lookup('ansible.builtin.template', 'plan.sh.j2') }}"
+  register: photo_ingest_plan
+  become: false
+  check_mode: false
+  changed_when: "'CHANGE' in photo_ingest_plan.stdout_lines"

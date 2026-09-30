@@ -1,0 +1,46 @@
+---
+# Resolve from the graph even with --limit pixel1. Delegated variables must be
+# explicit: the Pixel and NAS have different logins and connection identities.
+- name: Read the controller schedule and check for a still-running manager
+  vars:
+    edge: "{{ photo_pipelines.values() | selectattr('receiver' if inventory_hostname in groups['photo_receivers'] else 'controller', 'equalto', inventory_hostname) | first }}"
+    controller: '{{ hostvars[edge.controller] }}'
+    ansible_user: '{{ controller.ansible_user }}'
+    ansible_host: '{{ controller.ansible_host }}'
+    ansible_become: false
+  delegate_to: '{{ edge.controller }}'
+  ansible.builtin.raw: |
+    set -eu
+    t=$(/usr/syno/bin/synoschedtask --get id={{ controller.synology_photo_backup.schedule.task_id }} 2>&1) || :
+    printf '%s\n' "$t" | grep -Fq 'State: [disabled]' || { echo 'Pause the DSM Pixel Upload task before changing the farm.'; exit 51; }
+    ps -eo args | awk -v script={{ (controller.photo_ingest.state_dir + '/pixel_manager.sh') | quote }} '
+      $1 ~ /(^|\/)bash$/ && $2==script {active=1}
+      END {exit active ? 1 : 0}' || { echo 'The manager is still running; let it finish.'; exit 52; }
+    lock={{ (controller.photo_ingest.state_dir + '/pixel_manager.lock') | quote }}
+    if [ -e "$lock" ] || [ -L "$lock" ]; then
+      [ ! -L "$lock" ] && [ -f "$lock" ] || exit 53
+      exec 9<"$lock"
+      flock -n 9 || exit 52
+    fi
+    echo MAINTENANCE_READY
+  register: photo_maintenance_observation
+  become: false
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Require a disabled scheduler and no active transfer lock
+  ansible.builtin.assert:
+    that:
+      - photo_maintenance_observation.rc == 0
+      - "'MAINTENANCE_READY' in photo_maintenance_observation.stdout_lines"
+    quiet: true
+    fail_msg: >-
+      Pause the DSM task and let the manager finish before changes or activation.
+      The configured task must be disabled, its process absent, and any existing
+      lock readable and unlocked. No task is disabled automatically.
+
+- name: Record the observed maintenance state for role inputs
+  ansible.builtin.set_fact:
+    photo_maintenance_ready: "{{ 'MAINTENANCE_READY' in photo_maintenance_observation.stdout_lines }}"

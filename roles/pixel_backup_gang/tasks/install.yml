@@ -1,0 +1,27 @@
+---
+- name: Keep the package directory available with its declared permissions
+  android_file:
+    path: '{{ pbg_config.helpers_dir }}'
+    allow_changes: '{{ pbg_maintenance_ready | default(false) | bool }}'
+    state: directory
+    owner: '0'
+    group: '1015'
+    mode: '0771'
+  check_mode: '{{ pbg_plan_only | default(ansible_check_mode) }}'
+  register: pbg_directory_result
+
+- name: Install the rendered sources with their declared permissions
+  android_file:
+    path: '{{ item.dest }}'
+    allow_changes: '{{ pbg_maintenance_ready | default(false) | bool }}'
+    content: "{{ lookup('ansible.builtin.template', item.template, rstrip=False) }}"
+    owner: '{{ item.uid | string }}'
+    group: '{{ item.gid | string }}'
+    mode: '{{ item.mode }}'
+  loop: '{{ pbg_adoption_sources }}'
+  loop_control:
+    label: '{{ item.dest }}'
+  check_mode: '{{ pbg_plan_only | default(ansible_check_mode) }}'
+  register: pbg_files_result
+  no_log: true
+  diff: false

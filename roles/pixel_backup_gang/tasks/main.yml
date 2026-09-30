@@ -1,8 +1,5 @@
 ---
-# This entry point can only inspect. Bootstrap is a separate future batch.
-- name: Validate explicit inputs and exact rendering before connecting
-  ansible.builtin.import_tasks: validate.yml
-- name: Require the underlying Android storage and Magisk setup
-  ansible.builtin.import_tasks: prerequisites.yml
-- name: Read source fingerprints and fail on drift
-  ansible.builtin.import_tasks: inspect.yml
+- name: Plan the source installation and inspect prerequisites
+  ansible.builtin.import_tasks: plan.yml
+- name: Apply the source plan
+  ansible.builtin.import_tasks: apply.yml

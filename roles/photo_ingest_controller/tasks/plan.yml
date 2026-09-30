@@ -1,0 +1,5 @@
+---
+- name: Validate controller source inputs
+  ansible.builtin.import_tasks: validate.yml
+- name: Compare the desired controller source
+  ansible.builtin.import_tasks: compare.yml

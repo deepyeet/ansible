@@ -1,0 +1,40 @@
+---
+# Explicit runtime activation. Never imported by site.yml or the management play.
+- name: Validate the declared pipeline before activation
+  ansible.builtin.import_playbook: photo-backup-validate.yml
+
+- name: Start a fully stopped Pixel farm after source installation
+  hosts: photo_receivers
+  gather_facts: false
+  become: false
+  any_errors_fatal: true
+  tasks:
+    - ansible.builtin.import_tasks: tasks/photo-backup-identity.yml
+    - ansible.builtin.import_tasks: tasks/photo-backup-receiver-plan.yml
+    - name: Require installed desired sources before any activation
+      ansible.builtin.assert:
+        that:
+          - not pbg_directory_result.changed
+          - not pbg_files_result.changed
+          - not pixel_runtime_directory_result.changed
+          - not pixel_runtime_files_result.changed
+        quiet: true
+        fail_msg: Run photo-backup.yml to install the desired sources first.
+    - name: Classify the farm before coordinating activation
+      ansible.builtin.include_role:
+        name: pixel_google_photos_runtime
+        tasks_from: activation_state
+      vars:
+        pixel_runtime_adoption_sources: '{{ photo_adoption_sources.pixel_google_photos_runtime }}'
+        pixel_runtime_healthcheck_url: '{{ vault_pixel_backup_healthcheck_url }}'
+    - name: Require a paused and idle controller for a stopped farm
+      ansible.builtin.include_tasks: tasks/photo-backup-maintenance.yml
+      when: pixel_runtime_cold and not ansible_check_mode
+    - name: Activate only a completely stopped farm, or inspect the running farm
+      ansible.builtin.include_role:
+        name: pixel_google_photos_runtime
+        tasks_from: start
+      vars:
+        pixel_runtime_adoption_sources: '{{ photo_adoption_sources.pixel_google_photos_runtime }}'
+        pixel_runtime_healthcheck_url: '{{ vault_pixel_backup_healthcheck_url }}'
+        pixel_runtime_maintenance_ready: '{{ photo_maintenance_ready | default(false) }}'

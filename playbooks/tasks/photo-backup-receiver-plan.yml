@@ -1,19 +1,17 @@
 ---
-- name: Manage the captured upstream storage helpers
+- name: Plan the captured upstream storage helpers
   ansible.builtin.include_role:
     name: pixel_backup_gang
-    tasks_from: apply
+    tasks_from: plan
     public: false
   vars:
-    pbg_maintenance_ready: '{{ photo_maintenance_ready | default(false) }}'
     pbg_adoption_sources: '{{ photo_adoption_sources.pixel_backup_gang }}'
 
-- name: Manage the custom boot, health and Photos cleanup runtime
+- name: Plan the custom boot, health and Photos cleanup runtime
   ansible.builtin.include_role:
     name: pixel_google_photos_runtime
-    tasks_from: apply
+    tasks_from: plan
     public: false
   vars:
-    pixel_runtime_maintenance_ready: '{{ photo_maintenance_ready | default(false) }}'
     pixel_runtime_adoption_sources: '{{ photo_adoption_sources.pixel_google_photos_runtime }}'
     pixel_runtime_healthcheck_url: '{{ vault_pixel_backup_healthcheck_url }}'

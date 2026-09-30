@@ -1,0 +1,65 @@
+---
+# Pipeline orchestration has already planned both endpoints. Reuse that plan;
+# the file action/comparison still rechecks live state immediately before writes.
+- name: Require a preceding controller plan
+  ansible.builtin.assert:
+    that: photo_ingest_plan is defined
+    quiet: true
+- name: Refresh the controller comparison before any write
+  ansible.builtin.import_tasks: compare.yml
+- name: Require a coordinated maintenance window for controller changes
+  ansible.builtin.assert:
+    that:
+      - photo_backup_operation | default('manage') == 'manage'
+      - not photo_ingest_plan.changed or photo_ingest_maintenance_ready | default(false) | bool or ansible_check_mode
+    fail_msg: Pause the controller schedule before changing the manager.
+    quiet: true
+
+# Native modules only run when there is a change. A matching live installation
+# requires neither sudo nor remote module staging. -K or Vault supplies sudo auth.
+- name: Install the controller script using authenticated root privileges
+  when: photo_ingest_plan.changed and not ansible_check_mode
+  become: true
+  vars:
+    ansible_become: true
+    ansible_become_user: root
+    ansible_become_method: sudo
+  block:
+    - name: Prove authenticated root access before publishing the script
+      ansible.builtin.command: id -u
+      register: photo_ingest_root_identity
+      changed_when: false
+      failed_when: photo_ingest_root_identity.stdout | trim != '0'
+
+    - name: Render the manager for the manually configured DSM task
+      ansible.builtin.template:
+        src: pixel_manager.sh.j2
+        dest: '{{ photo_ingest.state_dir }}/pixel_manager.sh'
+        owner: '{{ photo_ingest_file_owner }}'
+        group: '{{ photo_ingest_file_group }}'
+        mode: '{{ photo_ingest_adoption_sources[0].mode }}'
+        follow: false
+        backup: false
+        validate: /bin/bash -n %s
+      no_log: true
+      diff: false
+
+    - name: Read back the installed controller source
+      ansible.builtin.stat:
+        path: '{{ photo_ingest.state_dir }}/pixel_manager.sh'
+        follow: false
+        checksum_algorithm: sha256
+      register: photo_ingest_installed
+      no_log: true
+
+    - name: Require the intended bytes and ownership after publication
+      ansible.builtin.assert:
+        that:
+          - photo_ingest_installed.stat.isreg
+          - not photo_ingest_installed.stat.islnk
+          - photo_ingest_installed.stat.checksum == lookup('ansible.builtin.template', 'pixel_manager.sh.j2', rstrip=False) | hash('sha256')
+          - photo_ingest_installed.stat.pw_name == photo_ingest_file_owner
+          - photo_ingest_installed.stat.gr_name == photo_ingest_file_group
+          - photo_ingest_installed.stat.mode | int == photo_ingest_adoption_sources[0].mode | int
+        quiet: true
+      no_log: true

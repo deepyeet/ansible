@@ -1,0 +1,9 @@
+---
+- name: Validate package inputs
+  ansible.builtin.import_tasks: validate.yml
+- name: Inspect drive identity and Photos prerequisites
+  ansible.builtin.import_tasks: prerequisites.yml
+- name: Predict source changes without writing
+  ansible.builtin.import_tasks: install.yml
+  vars:
+    pixel_runtime_plan_only: true

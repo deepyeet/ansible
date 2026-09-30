@@ -1,28 +1,58 @@
 ---
-# The default graph has only assertions, reads and reports. No bootstrap import.
-- name: Finish controller-side preflight before connecting to either machine
+- name: Validate the complete declared pipeline before connecting
   ansible.builtin.import_playbook: photo-backup-validate.yml
 
-- name: Inspect the declared photo receiver without staging remote files
+# Plan both sides before publishing anything. This also catches unsafe paths and
+# unmet platform prerequisites before a partial multi-host deployment can begin.
+- name: Plan the Pixel source installation
   hosts: photo_receivers
   gather_facts: false
   become: false
   any_errors_fatal: true
   tasks:
-    - name: Check the observed management identity
-      ansible.builtin.import_tasks: tasks/photo-backup-identity.yml
-    - name: Inspect the receiver source packages
-      ansible.builtin.import_tasks: tasks/photo-backup-receiver.yml
+    - ansible.builtin.import_tasks: tasks/photo-backup-identity.yml
+    - ansible.builtin.import_tasks: tasks/photo-backup-receiver-plan.yml
 
-- name: Inspect the declared photo controller and manual DSM prerequisites
+- name: Plan the NAS source installation and inspect manual DSM prerequisites
   hosts: photo_controllers
   gather_facts: false
   become: false
   any_errors_fatal: true
   tasks:
-    - name: Check the observed management identity
-      ansible.builtin.import_tasks: tasks/photo-backup-identity.yml
-    - name: Inspect the controller source package
-      ansible.builtin.import_tasks: tasks/photo-backup-controller.yml
-    - name: Inspect manually managed DSM prerequisites
-      ansible.builtin.import_tasks: tasks/photo-backup-synology.yml
+    - ansible.builtin.import_tasks: tasks/photo-backup-identity.yml
+    - ansible.builtin.import_tasks: tasks/photo-backup-synology.yml
+    - ansible.builtin.import_tasks: tasks/photo-backup-controller-plan.yml
+
+- name: Coordinate any planned changes with the DSM scheduler
+  hosts: photo_backup
+  gather_facts: false
+  become: false
+  any_errors_fatal: true
+  tasks:
+    - name: Determine whether this host would change
+      ansible.builtin.set_fact:
+        photo_sources_need_change: >-
+          {{ (pbg_directory_result.changed | default(false))
+             or (pbg_files_result.changed | default(false))
+             or (pixel_runtime_directory_result.changed | default(false))
+             or (pixel_runtime_files_result.changed | default(false))
+             or (photo_ingest_plan.changed | default(false)) }}
+    - name: Inspect controller quiescence before any real source change
+      ansible.builtin.include_tasks: tasks/photo-backup-maintenance.yml
+      when: photo_sources_need_change and not ansible_check_mode
+
+- name: Manage the Pixel packages without activating them
+  hosts: photo_receivers
+  gather_facts: false
+  become: false
+  any_errors_fatal: true
+  tasks:
+    - ansible.builtin.import_tasks: tasks/photo-backup-receiver.yml
+
+- name: Manage the controller script without running the transfer job
+  hosts: photo_controllers
+  gather_facts: false
+  become: false
+  any_errors_fatal: true
+  tasks:
+    - ansible.builtin.import_tasks: tasks/photo-backup-controller.yml

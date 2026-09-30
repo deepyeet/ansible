@@ -1,7 +1,7 @@
 ---
 argument_specs:
   main:
-    short_description: Inspect captured sources without remote changes
+    short_description: Manage the declared source files without restarting the farm
     options: &adoption_options
       pbg_adoption_sources:
         type: list
@@ -47,3 +47,12 @@ argument_specs:
   prerequisites:
     short_description: Inspect Android and Magisk before any helper files are installed
     options: {}
+  plan:
+    short_description: Inspect prerequisites and predict source changes without writing
+    options: *adoption_options
+  audit:
+    short_description: Require the captured baseline and inspect installed state
+    options: *adoption_options
+  apply:
+    short_description: Apply a preceding source plan without repeating platform inspection
+    options: *adoption_options

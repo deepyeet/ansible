@@ -26,14 +26,23 @@ healthy. Startup's kernel panic settings are a separate crash-recovery mechanism
 
 - `pixel_runtime_config`: storage paths, drive UUID, timing, health thresholds,
   kernel policy and UI coordinates; [argument schema](meta/argument_specs.yml).
-- `pixel_runtime_healthcheck_url`: supplied from Vault, never printed or contacted.
+- `pixel_runtime_healthcheck_url`: supplied from Vault; never printed. The running health worker contacts it.
 - `pixel_runtime_adoption_sources`: reviewed fingerprints for all four sources.
 
-`tasks/main.yml` validates rendering, checks platform prerequisites and source
-fingerprints, then asserts the actual ext4/sdcardfs mount chain, canary identity,
-same-filesystem staging, Photos-process mount visibility and singleton workers.
-`tasks/validate.yml` is entirely local. Both are read-only; drift fails without
-repair. Passing these checks still does not establish cloud backup.
+`main` manages rendered sources, with the executable Magisk hook published
+last. Standalone `main` plans then applies. The pipeline uses `plan` and `apply`
+separately to inspect prerequisites once. `validate` renders locally. `audit`
+checks the historical source baseline and installed mount/worker state. Source
+changes require `pixel_runtime_maintenance_ready` from the play's observed
+controller state. Matching files need no maintenance window or write.
+
+`activate` is the standalone plan/start entrypoint. The activation play uses
+its existing source plan and calls `start`; mount/worker state is checked again
+after controller maintenance inspection. It
+accepts a healthy farm unchanged, starts a completely stopped farm only with an
+idle controller, and refuses partial mounts/duplicate workers. It establishes
+missing canary/transfer directories only after verifying the external mount.
+A reset/recovery exercise has not yet been performed with this code.
 
 `tasks/prerequisites.yml` runs before the farm is installed, without a source
 manifest or health secret. It checks the connected drive UUID/type, Photos
@@ -43,16 +52,17 @@ health/kernel interfaces. The additional screen/input fields in
 they do not recalibrate its taps or prove that a Photos menu matches.
 
 Boot, health and UI sources are separate templates within one lifecycle role.
-Only `farm-startup.sh` owns generated `watchdog_runner.sh`; adoption never writes
-or executes either. No reboot, mount, app action, health ping or bootstrap path
-exists in this role's default graph.
+Only `farm-startup.sh` owns generated `watchdog_runner.sh`. Default management
+installs sources without executing the hook. Activation starts Photos and the
+health/watchdog loops, but never invokes the cleanup automation.
 
 The boot hook invokes the storage helper, launches Photos, generates the
 watchdog, sets panic policy and starts health reporting. The NAS separately
 invokes cleanup; there is no phone cleanup timer. The canary is externally
-prepared drive state: none of these scripts creates it. Missing-drive boot
+prepared drive state: the guarded activation task can create it; the captured
+boot script itself never does. Missing-drive boot
 failure occurs before either worker starts.
 
 See [pipeline setup and recovery](../../playbooks/PHOTO_BACKUP.md) for each
 script's place in the boot sequence, prerequisites that need manual setup,
-and the remaining work before a reset phone can be rebuilt.
+source deployment, explicit activation and remaining manual setup.

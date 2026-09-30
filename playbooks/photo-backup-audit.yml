@@ -1,0 +1,34 @@
+---
+# Explicit baseline audit: only assertions, reads and reports.
+- name: Finish controller-side preflight before connecting to either machine
+  ansible.builtin.import_playbook: photo-backup-validate.yml
+  vars:
+    photo_backup_operation: audit
+
+- name: Inspect the declared photo receiver without staging remote files
+  hosts: photo_receivers
+  vars:
+    photo_backup_operation: audit
+  gather_facts: false
+  become: false
+  any_errors_fatal: true
+  tasks:
+    - name: Check the observed management identity
+      ansible.builtin.import_tasks: tasks/photo-backup-identity.yml
+    - name: Inspect the receiver source packages
+      ansible.builtin.import_tasks: tasks/photo-backup-receiver-audit.yml
+
+- name: Inspect the declared photo controller and manual DSM prerequisites
+  hosts: photo_controllers
+  vars:
+    photo_backup_operation: audit
+  gather_facts: false
+  become: false
+  any_errors_fatal: true
+  tasks:
+    - name: Check the observed management identity
+      ansible.builtin.import_tasks: tasks/photo-backup-identity.yml
+    - name: Inspect the controller source package
+      ansible.builtin.import_tasks: tasks/photo-backup-controller-audit.yml
+    - name: Inspect manually managed DSM prerequisites
+      ansible.builtin.import_tasks: tasks/photo-backup-synology.yml

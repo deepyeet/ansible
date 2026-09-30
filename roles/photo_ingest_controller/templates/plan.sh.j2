@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+p={{ (photo_ingest.state_dir + '/pixel_manager.sh') | quote }}
+a=${p%/*}
+while [ -n "$a" ] && [ "$a" != / ]; do
+  [ ! -L "$a" ] && [ -d "$a" ] || exit 41
+  a=${a%/*}
+done
+[ ! -L "$p" ] || exit 42
+uid=$(id -u {{ photo_ingest_file_owner | quote }})
+gid=$(awk -F: -v name={{ photo_ingest_file_group | quote }} '$1==name {print $3}' /etc/group)
+[ -n "$gid" ] || exit 43
+if [ -e "$p" ]; then
+  [ -f "$p" ] || exit 42
+  h=$(sha256sum "$p")
+  m=$(stat -c '%u|%g|%a' "$p")
+  if [ "${h%% *}" = {{ lookup('ansible.builtin.template', 'pixel_manager.sh.j2', rstrip=False) | hash('sha256') | quote }} ] &&
+     [ "$m" = "$uid|$gid|{{ photo_ingest_adoption_sources[0].mode }}" ]; then
+    echo MATCH
+    exit 0
+  fi
+fi
+echo CHANGE

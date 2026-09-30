@@ -2,7 +2,7 @@
 - name: Keep Photos prerequisite inspection read-only and unelevated
   ansible.builtin.assert:
     that:
-      - photo_backup_operation | default('audit') == 'audit'
+      - photo_backup_operation | default('manage') in ['manage', 'audit']
       - not (ansible_become | default(false) | bool)
     quiet: true
 

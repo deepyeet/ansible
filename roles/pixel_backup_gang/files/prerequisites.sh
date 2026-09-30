@@ -30,6 +30,9 @@ emit ssh_authorized_keys_present test -s /data/ssh/root/.ssh/authorized_keys
 emit ssh_authorized_keys_private test "$(stat -c '%u:%g:%a' /data/ssh/root/.ssh/authorized_keys 2>/dev/null || true)" = 0:0:600
 emit ssh_binary_available test -x /system/bin/sshd
 emit rsync_binary_available test -x /system/bin/rsync
-for x in sha256sum stat readlink blkid mount nsenter mkdir chmod chown setenforce am; do
+for x in sha256sum stat readlink blkid mount nsenter mkdir chmod chown setenforce am cat mktemp rm rmdir; do
     emit "command_$x" command -v "$x"
 done
+# The atomic installer and bounded activation use these Magisk applets.
+emit busybox_atomic_rename sh -c '/data/adb/magisk/busybox mv --help 2>&1 | grep -q T'
+emit busybox_timeout sh -c '/data/adb/magisk/busybox timeout --help 2>&1 | grep -q SECS'
