@@ -56,8 +56,9 @@ class PixelTailscaleTemplateTests(unittest.TestCase):
         self.assertIn('"$0" run', script)
         self.assertIn("/data/adb/tailscale/run/tailscaled.sock", script)
         self.assertIn(self.defaults["pixel_tailscale_tun_mode"], script)
-        self.assertIn(str(self.defaults["pixel_tailscale_port"]), script)
         self.assertIn("--statedir=", script)
+        self.assertIn("/system/etc/group", script)
+        self.assertIn("mount --bind", script)
 
     def test_render_tailscale_wrapper_script(self):
         wrapper = render_template(

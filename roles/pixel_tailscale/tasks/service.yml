@@ -95,6 +95,19 @@
       "755" \
       "{{ _pixel_tailscale_getent_content | b64encode }}"
 
+    # 7. Ensure mirrored /system/etc with passwd and group is active immediately
+    if [ ! -f /system/etc/group ]; then
+      mkdir -p "{{ pixel_tailscale_base_dir }}/etc"
+      if [ ! -f "{{ pixel_tailscale_base_dir }}/etc/ld.config.vndk_lite.txt" ]; then
+        cp -a /system/etc/* "{{ pixel_tailscale_base_dir }}/etc/" 2>/dev/null || true
+      fi
+      echo "{{ _pixel_tailscale_passwd_content }}" > "{{ pixel_tailscale_base_dir }}/etc/passwd"
+      echo "{{ _pixel_tailscale_group_content }}" > "{{ pixel_tailscale_base_dir }}/etc/group"
+      chmod 644 "{{ pixel_tailscale_base_dir }}/etc/passwd" "{{ pixel_tailscale_base_dir }}/etc/group"
+      mount --bind "{{ pixel_tailscale_base_dir }}/etc" /system/etc
+      changed=1
+    fi
+
     if [ "$changed" -eq 1 ]; then
       echo "CHANGED"
     else
