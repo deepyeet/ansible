@@ -7,6 +7,18 @@
       - managed_users | length > 0
     fail_msg: "The 'managed_users' variable must be defined and contain at least one user."
 
+- name: Validate that docker_rootless role is present if rootless_docker is requested
+  ansible.builtin.assert:
+    that:
+      - "'docker_rootless' in ansible_play_role_names"
+    fail_msg: >-
+      User '{{ item.username }}' requested rootless_docker: true, but the
+      'docker_rootless' role is missing from this play!
+  loop: "{{ managed_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+  when: item.rootless_docker | default(false) | bool
+
 - name: Ensure managed users exist
   ansible.builtin.user:
     name: "{{ item.username }}"
