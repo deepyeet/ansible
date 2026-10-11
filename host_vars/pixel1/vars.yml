@@ -62,3 +62,10 @@ pixel_runtime_config:
 # Expected effective UID for the management SSH login, separate from file ownership.
 photo_management_identity:
   uid: 0
+
+# Tailscale daemon settings for Pixel 1
+pixel_tailscale_hostname: pixel1
+pixel_tailscale_ssh_enabled: true
+pixel_tailscale_tags:
+  - tag:internal
+

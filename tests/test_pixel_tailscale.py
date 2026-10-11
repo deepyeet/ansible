@@ -41,6 +41,7 @@ class PixelTailscaleTemplateTests(unittest.TestCase):
             "pixel_tailscale_tun_mode",
             "pixel_tailscale_ssh_enabled",
             "pixel_tailscale_hostname",
+            "pixel_tailscale_tags",
         ]
         for key in required_keys:
             self.assertIn(key, self.defaults, f"Missing default variable: {key}")

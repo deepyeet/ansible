@@ -19,6 +19,7 @@
       --authkey={{ pixel_tailscale_authkey }} \
       --hostname={{ pixel_tailscale_hostname }} \
       {% if pixel_tailscale_ssh_enabled %}--ssh{% endif %} \
+      {% if pixel_tailscale_tags | default([]) | length > 0 %}--advertise-tags={{ pixel_tailscale_tags | join(',') }}{% endif %} \
       --accept-dns={{ pixel_tailscale_accept_dns | lower }} \
       --accept-routes={{ pixel_tailscale_accept_routes | lower }}
   no_log: true
@@ -28,12 +29,25 @@
     - not _pixel_tailscale_is_logged_in
   changed_when: true
 
+- name: Ensure Tailscale preferences and flags are active on enrolled node
+  ansible.builtin.raw: |
+    {{ pixel_tailscale_bin_dir }}/tailscale --socket={{ pixel_tailscale_socket }} up \
+      --hostname={{ pixel_tailscale_hostname }} \
+      {% if pixel_tailscale_ssh_enabled %}--ssh{% endif %} \
+      {% if pixel_tailscale_tags | default([]) | length > 0 %}--advertise-tags={{ pixel_tailscale_tags | join(',') }}{% endif %} \
+      --accept-dns={{ pixel_tailscale_accept_dns | lower }} \
+      --accept-routes={{ pixel_tailscale_accept_routes | lower }}
+  when:
+    - not ansible_check_mode
+    - _pixel_tailscale_is_logged_in
+  changed_when: false
+
 - name: Prompt interactive login instructions if unauthenticated and no authkey provided
   ansible.builtin.debug:
     msg:
       - "Tailscale daemon is active on Pixel 1, but node is not yet enrolled."
       - "To authenticate interactively, run via SSH on the Pixel:"
-      - "tailscale up --hostname={{ pixel_tailscale_hostname }} {% if pixel_tailscale_ssh_enabled %}--ssh{% endif %} --accept-dns={{ pixel_tailscale_accept_dns | lower }} --accept-routes={{ pixel_tailscale_accept_routes | lower }}"
+      - "tailscale up --hostname={{ pixel_tailscale_hostname }} {% if pixel_tailscale_ssh_enabled %}--ssh{% endif %} {% if pixel_tailscale_tags | default([]) | length > 0 %}--advertise-tags={{ pixel_tailscale_tags | join(',') }}{% endif %} --accept-dns={{ pixel_tailscale_accept_dns | lower }} --accept-routes={{ pixel_tailscale_accept_routes | lower }}"
       - "Alternatively, provide a pre-authenticated authkey in vault (vault_pixel_tailscale_authkey)."
   when:
     - not ansible_check_mode
