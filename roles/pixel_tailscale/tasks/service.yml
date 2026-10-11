@@ -17,6 +17,9 @@
     _pixel_tailscaled_service_content: "{{ lookup('ansible.builtin.template', 'tailscaled.sh.j2') }}"
     _pixel_tailscale_module_prop_content: "{{ lookup('ansible.builtin.template', 'module.prop.j2') }}"
     _pixel_tailscale_wrapper_content: "{{ lookup('ansible.builtin.template', 'tailscale_wrapper.sh.j2') }}"
+    _pixel_tailscale_passwd_content: "{{ lookup('ansible.builtin.template', 'passwd.j2') }}"
+    _pixel_tailscale_group_content: "{{ lookup('ansible.builtin.template', 'group.j2') }}"
+    _pixel_tailscale_getent_content: "{{ lookup('ansible.builtin.template', 'getent.j2') }}"
 
 - name: Deploy Magisk service and CLI wrapper files
   ansible.builtin.raw: |
@@ -69,6 +72,38 @@
       "{{ _pixel_tailscale_wrapper_content | hash('sha256') }}" \
       "755" \
       "{{ _pixel_tailscale_wrapper_content | b64encode }}"
+
+    # 5. User & group database files for Tailscale SSH resolution (/system/etc and module overlay)
+    deploy_file "/system/etc/passwd" \
+      "{{ _pixel_tailscale_passwd_content | hash('sha256') }}" \
+      "644" \
+      "{{ _pixel_tailscale_passwd_content | b64encode }}"
+
+    deploy_file "/data/adb/modules/tailscale/system/etc/passwd" \
+      "{{ _pixel_tailscale_passwd_content | hash('sha256') }}" \
+      "644" \
+      "{{ _pixel_tailscale_passwd_content | b64encode }}"
+
+    deploy_file "/system/etc/group" \
+      "{{ _pixel_tailscale_group_content | hash('sha256') }}" \
+      "644" \
+      "{{ _pixel_tailscale_group_content | b64encode }}"
+
+    deploy_file "/data/adb/modules/tailscale/system/etc/group" \
+      "{{ _pixel_tailscale_group_content | hash('sha256') }}" \
+      "644" \
+      "{{ _pixel_tailscale_group_content | b64encode }}"
+
+    # 6. getent helper script for Tailscale SSH resolution (/sbin and module overlay)
+    deploy_file "/sbin/getent" \
+      "{{ _pixel_tailscale_getent_content | hash('sha256') }}" \
+      "755" \
+      "{{ _pixel_tailscale_getent_content | b64encode }}"
+
+    deploy_file "/data/adb/modules/tailscale/system/bin/getent" \
+      "{{ _pixel_tailscale_getent_content | hash('sha256') }}" \
+      "755" \
+      "{{ _pixel_tailscale_getent_content | b64encode }}"
 
     if [ "$changed" -eq 1 ]; then
       echo "CHANGED"

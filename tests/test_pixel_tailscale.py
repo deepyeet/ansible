@@ -75,6 +75,18 @@ class PixelTailscaleTemplateTests(unittest.TestCase):
         self.assertIn(f"version=v{self.defaults['pixel_tailscale_version']}", prop)
         self.assertIn("author=Ansible", prop)
 
+    def test_render_passwd_and_group(self):
+        passwd = render_template("roles/pixel_tailscale/templates/passwd.j2", self.defaults)
+        group = render_template("roles/pixel_tailscale/templates/group.j2", self.defaults)
+        self.assertIn("root:x:0:0:root:", passwd)
+        self.assertIn("root:x:0:", group)
+
+    def test_render_getent_script(self):
+        getent = render_template("roles/pixel_tailscale/templates/getent.j2", self.defaults)
+        self.assertIn("#!/system/bin/sh", getent)
+        self.assertIn("/etc/passwd", getent)
+        self.assertIn("/etc/group", getent)
+
 
 if __name__ == "__main__":
     unittest.main()
