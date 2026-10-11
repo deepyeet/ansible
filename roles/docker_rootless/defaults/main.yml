@@ -1,0 +1,5 @@
+---
+# defaults/main.yml for docker_rootless
+
+# Automatically discover users with rootless_docker: true from managed_users
+docker_rootless_users: "{{ (managed_users | default([])) | selectattr('rootless_docker', 'defined') | selectattr('rootless_docker') | map(attribute='username') | list }}"

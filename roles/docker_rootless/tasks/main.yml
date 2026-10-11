@@ -1,0 +1,68 @@
+---
+# tasks/main.yml for docker_rootless
+
+- name: Manage rootless Docker
+  when: docker_rootless_users is defined and docker_rootless_users | length > 0
+  block:
+    - name: Ensure rootless Docker host dependencies are installed
+      ansible.builtin.apt:
+        name:
+          - uidmap
+          - slirp4netns
+          - dbus-user-session
+          - docker-ce-rootless-extras
+        state: present
+      become: true
+
+    - name: Fetch passwd database for user details
+      ansible.builtin.getent:
+        database: passwd
+      become: true
+
+    - name: Ensure systemd lingering is enabled for rootless Docker users
+      ansible.builtin.command:
+        cmd: "loginctl enable-linger {{ item }}"
+        creates: "/var/lib/systemd/linger/{{ item }}"
+      loop: "{{ docker_rootless_users }}"
+      become: true
+
+    - name: Ensure user systemd manager is running
+      ansible.builtin.systemd:
+        name: "user@{{ getent_passwd[item][1] }}.service"
+        state: started
+      loop: "{{ docker_rootless_users }}"
+      become: true
+
+    - name: Run rootless Docker setup tool for each user
+      become: true
+      become_user: "{{ item }}"
+      ansible.builtin.command:
+        cmd: "dockerd-rootless-setuptool.sh install"
+        creates: "{{ getent_passwd[item][4] }}/.local/share/docker"
+      loop: "{{ docker_rootless_users }}"
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ getent_passwd[item][1] }}"
+        DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ getent_passwd[item][1] }}/bus"
+
+    - name: Enable and start rootless Docker user service
+      become: true
+      become_user: "{{ item }}"
+      ansible.builtin.systemd:
+        name: docker
+        scope: user
+        enabled: true
+        state: started
+      loop: "{{ docker_rootless_users }}"
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ getent_passwd[item][1] }}"
+
+    - name: Configure DOCKER_HOST in user shell profiles
+      become: true
+      become_user: "{{ item }}"
+      ansible.builtin.lineinfile:
+        path: "{{ getent_passwd[item][4] }}/.bashrc"
+        line: 'export DOCKER_HOST=unix:///run/user/{{ getent_passwd[item][1] }}/docker.sock'
+        state: present
+        create: true
+        mode: '0644'
+      loop: "{{ docker_rootless_users }}"

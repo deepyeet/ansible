@@ -11,6 +11,8 @@
     - role: backup_target
     - role: samba
     - role: torrenter
+    - role: docker_rootless
+      tags: [docker_rootless]
     - role: artis3n.tailscale.machine
       tags: [tailscale]
 
