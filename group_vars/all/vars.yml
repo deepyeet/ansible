@@ -2,7 +2,7 @@
 timezone: America/Los_Angeles
 
 ansible_user: "{{ secret_unix_name }}"
-managed_users:
+base_managed_users:
   - username: "{{ secret_unix_name }}"
     groups: "sudo"
     shell: /usr/bin/zsh
@@ -14,6 +14,8 @@ managed_users:
       # It should be a private key with read access to the repo.
       # Store the actual key in the corresponding vault file.
       deploy_key: "{{ vault_git_deploy_key }}"
+
+managed_users: "{{ base_managed_users + (host_managed_users | default([])) }}"
 
 
 nodejs_version: "24.x"

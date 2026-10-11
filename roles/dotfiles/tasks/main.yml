@@ -106,10 +106,6 @@
 - name: Get user system information
   ansible.builtin.getent:
     database: passwd
-    key: "{{ item.username }}"
-  loop: "{{ managed_users }}"
-  loop_control:
-    label: "{{ item.username }}"
 
 - name: Stow dotfiles (Symlink all packages)
   ansible.builtin.shell:
@@ -117,9 +113,9 @@
     chdir: "{{ getent_passwd[item.username][4] }}/{{ item.dotfiles.dest | basename }}"
   become: true
   become_user: "{{ item.username }}"
-  loop: "{{ managed_users }}"
+  loop: "{{ managed_users | selectattr('dotfiles', 'defined') | list }}"
   loop_control:
     label: "{{ item.username }}"
   register: stow_out
   changed_when: "'LINK' in stow_out.stderr"
-  when: item.dotfiles is defined and item.dotfiles.repo is defined
+  when: item.dotfiles.repo is defined

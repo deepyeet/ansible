@@ -54,3 +54,10 @@ docker_daemon_options:
 # --- Tailscale Configuration ---
 tailscale_oauth_ephemeral: false
 tailscale_args: "--hostname raspberrypi --ssh"
+
+# --- Host Managed Users ---
+host_managed_users:
+  - username: "muse"
+    shell: /bin/bash
+    authorized_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID5por5MjFWxS3sNsr/OuE7PLYiKgzZPVusA3Tp4NDXf hatch"
