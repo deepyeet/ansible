@@ -1,0 +1,10 @@
+---
+# playbooks/pixel-tailscale.yml
+- name: Manage Tailscale on Pixel 1 Farm
+  hosts: photo_receivers
+  gather_facts: false
+  become: false
+  any_errors_fatal: true
+  roles:
+    - role: pixel_tailscale
+      tags: [pixel_tailscale]

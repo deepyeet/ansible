@@ -29,3 +29,8 @@
 - name: Manage the photo backup installation
   ansible.builtin.import_playbook: playbooks/photo-backup.yml
   tags: [photo_backup]
+
+- name: Manage Tailscale on Pixel 1
+  ansible.builtin.import_playbook: playbooks/pixel-tailscale.yml
+  tags: [pixel_tailscale, tailscale]
+

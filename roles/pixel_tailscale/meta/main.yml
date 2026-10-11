@@ -1,0 +1,12 @@
+---
+# meta/main.yml for pixel_tailscale
+galaxy_info:
+  author: Anonymous
+  description: Headless Tailscale daemon for Magisk-rooted Android Pixel 1
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: GenericLinux
+      versions:
+        - all
+dependencies: []

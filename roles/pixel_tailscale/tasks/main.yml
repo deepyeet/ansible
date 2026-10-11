@@ -1,0 +1,29 @@
+---
+# tasks/main.yml for pixel_tailscale
+
+- name: Validate management identity on target
+  ansible.builtin.raw: id -u
+  register: _pixel_id
+  check_mode: false
+  changed_when: false
+  failed_when: _pixel_id.stdout | trim != '0'
+
+- name: Manage Tailscale directories and binary distribution
+  ansible.builtin.include_tasks: install.yml
+  tags: [pixel_tailscale, pixel_tailscale_install]
+
+- name: Manage Tailscale Magisk service and CLI integration
+  ansible.builtin.include_tasks: service.yml
+  tags: [pixel_tailscale, pixel_tailscale_service]
+
+- name: Ensure Tailscale daemon is running
+  ansible.builtin.include_tasks: daemon.yml
+  tags: [pixel_tailscale, pixel_tailscale_daemon]
+
+- name: Manage Tailscale network enrollment
+  ansible.builtin.include_tasks: enroll.yml
+  tags: [pixel_tailscale, pixel_tailscale_enroll]
+
+- name: Report Tailscale runtime status
+  ansible.builtin.include_tasks: status.yml
+  tags: [pixel_tailscale, pixel_tailscale_status]

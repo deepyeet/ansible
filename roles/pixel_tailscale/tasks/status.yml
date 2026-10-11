@@ -1,0 +1,17 @@
+---
+# tasks/status.yml for pixel_tailscale
+
+- name: Retrieve Tailscale status and IP
+  ansible.builtin.raw: |
+    echo "--- TAILSCALE STATUS ---"
+    {{ pixel_tailscale_bin_dir }}/tailscale --socket={{ pixel_tailscale_socket }} status || true
+    echo "--- TAILSCALE IP ---"
+    {{ pixel_tailscale_bin_dir }}/tailscale --socket={{ pixel_tailscale_socket }} ip -4 || true
+  register: _pixel_tailscale_report
+  when: not ansible_check_mode
+  changed_when: false
+
+- name: Display Tailscale runtime status
+  ansible.builtin.debug:
+    msg: "{{ _pixel_tailscale_report.stdout_lines }}"
+  when: not ansible_check_mode

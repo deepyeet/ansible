@@ -1,0 +1,80 @@
+---
+# tasks/service.yml for pixel_tailscale
+
+- name: Prepare Magisk service and module directories
+  ansible.builtin.raw: |
+    mkdir -p /data/adb/service.d \
+             /data/adb/modules/tailscale/system/bin \
+             "{{ pixel_tailscale_bin_dir }}" \
+             "{{ pixel_tailscale_state_dir }}" \
+             "{{ pixel_tailscale_run_dir }}"
+    chmod 700 "{{ pixel_tailscale_base_dir }}" "{{ pixel_tailscale_state_dir }}" "{{ pixel_tailscale_run_dir }}"
+  when: not ansible_check_mode
+  changed_when: false
+
+- name: Render service and module configuration contents
+  ansible.builtin.set_fact:
+    _pixel_tailscaled_service_content: "{{ lookup('ansible.builtin.template', 'tailscaled.sh.j2') }}"
+    _pixel_tailscale_module_prop_content: "{{ lookup('ansible.builtin.template', 'module.prop.j2') }}"
+    _pixel_tailscale_wrapper_content: "{{ lookup('ansible.builtin.template', 'tailscale_wrapper.sh.j2') }}"
+
+- name: Deploy Magisk service and CLI wrapper files
+  ansible.builtin.raw: |
+    set -eu
+    changed=0
+
+    deploy_file() {
+      target="$1"
+      desired_sha="$2"
+      mode="$3"
+      b64_content="$4"
+
+      if [ -f "$target" ]; then
+        current_sha=$(sha256sum "$target" 2>/dev/null | cut -d' ' -f1 || true)
+        if [ "$current_sha" = "$desired_sha" ]; then
+          return 0
+        fi
+      fi
+
+      changed=1
+      if [ "{{ ansible_check_mode | bool }}" != "True" ]; then
+        target_dir="${target%/*}"
+        mkdir -p "$target_dir"
+        echo "$b64_content" | base64 -d > "${target}.tmp"
+        chmod "$mode" "${target}.tmp"
+        mv -f "${target}.tmp" "$target"
+      fi
+    }
+
+    # 1. Magisk late_start boot service
+    deploy_file "/data/adb/service.d/tailscaled.sh" \
+      "{{ _pixel_tailscaled_service_content | hash('sha256') }}" \
+      "755" \
+      "{{ _pixel_tailscaled_service_content | b64encode }}"
+
+    # 2. Magisk module metadata
+    deploy_file "/data/adb/modules/tailscale/module.prop" \
+      "{{ _pixel_tailscale_module_prop_content | hash('sha256') }}" \
+      "644" \
+      "{{ _pixel_tailscale_module_prop_content | b64encode }}"
+
+    # 3. Magisk module CLI wrapper (system overlay)
+    deploy_file "/data/adb/modules/tailscale/system/bin/tailscale" \
+      "{{ _pixel_tailscale_wrapper_content | hash('sha256') }}" \
+      "755" \
+      "{{ _pixel_tailscale_wrapper_content | b64encode }}"
+
+    # 4. Immediate runtime CLI wrapper (/sbin)
+    deploy_file "/sbin/tailscale" \
+      "{{ _pixel_tailscale_wrapper_content | hash('sha256') }}" \
+      "755" \
+      "{{ _pixel_tailscale_wrapper_content | b64encode }}"
+
+    if [ "$changed" -eq 1 ]; then
+      echo "CHANGED"
+    else
+      echo "OK"
+    fi
+  register: _pixel_tailscale_service_deploy
+  check_mode: false
+  changed_when: "'CHANGED' in _pixel_tailscale_service_deploy.stdout"

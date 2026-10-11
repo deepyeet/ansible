@@ -1,0 +1,46 @@
+---
+# tasks/daemon.yml for pixel_tailscale
+
+- name: Check Tailscale daemon process state
+  ansible.builtin.raw: |
+    s_pid=$(cat "{{ pixel_tailscale_supervisor_pid_file }}" 2>/dev/null || echo "")
+    d_pid=$(cat "{{ pixel_tailscale_pid_file }}" 2>/dev/null || echo "")
+    if [ -n "$s_pid" ] && kill -0 "$s_pid" 2>/dev/null && [ -n "$d_pid" ] && kill -0 "$d_pid" 2>/dev/null && [ -S "{{ pixel_tailscale_socket }}" ]; then
+      echo "RUNNING"
+    else
+      echo "STOPPED"
+    fi
+  register: _pixel_tailscale_daemon_check
+  check_mode: false
+  changed_when: false
+
+- name: Start Tailscale daemon via Magisk service script
+  ansible.builtin.raw: |
+    trap '' HUP
+    nohup /data/adb/service.d/tailscaled.sh </dev/null >> /data/adb/tailscale/run/tailscaled.log 2>&1 &
+  when:
+    - ('STOPPED' in _pixel_tailscale_daemon_check.stdout) or (_pixel_tailscale_service_deploy is changed)
+    - not ansible_check_mode
+  changed_when: true
+
+- name: Wait for Tailscale socket to become active
+  ansible.builtin.raw: |
+    retries=10
+    while [ $retries -gt 0 ]; do
+      if [ -S "{{ pixel_tailscale_socket }}" ]; then
+        exit 0
+      fi
+      sleep 1
+      retries=$((retries - 1))
+    done
+    echo "TIMED_OUT"
+    exit 1
+  when: not ansible_check_mode
+  changed_when: false
+
+- name: Verify Tailscale version response
+  ansible.builtin.raw: |
+    {{ pixel_tailscale_bin_dir }}/tailscale --socket={{ pixel_tailscale_socket }} version
+  register: _pixel_tailscale_version_out
+  when: not ansible_check_mode
+  changed_when: false

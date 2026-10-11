@@ -1,0 +1,28 @@
+---
+# defaults/main.yml for pixel_tailscale
+
+pixel_tailscale_version: "1.80.3"
+pixel_tailscale_tarball_checksum: "f7fd05ab7d4e61a36f738728bf862f321531c039b8eeb0b33cd4568f72b01481"
+pixel_tailscale_daemon_checksum: "34db4c0476b9348eff4a647db287de29d3b9932eb6c5134413f5c08e3c6fe4c5"
+pixel_tailscale_cli_checksum: "b201616c4fa827e577ebf3450f30fef4e2a67c3037e7ad270bb2877b1d42d147"
+
+pixel_tailscale_base_dir: "/data/adb/tailscale"
+pixel_tailscale_bin_dir: "{{ pixel_tailscale_base_dir }}/bin"
+pixel_tailscale_state_dir: "{{ pixel_tailscale_base_dir }}/state"
+pixel_tailscale_run_dir: "{{ pixel_tailscale_base_dir }}/run"
+pixel_tailscale_log_path: "{{ pixel_tailscale_base_dir }}/run/tailscaled.log"
+pixel_tailscale_log_max_bytes: 5242880 # 5 MB max
+pixel_tailscale_socket: "{{ pixel_tailscale_base_dir }}/run/tailscaled.sock"
+pixel_tailscale_pid_file: "{{ pixel_tailscale_base_dir }}/run/tailscaled.pid"
+pixel_tailscale_supervisor_pid_file: "{{ pixel_tailscale_base_dir }}/run/supervisor.pid"
+pixel_tailscale_port: 41641
+
+# Networking & Service options
+pixel_tailscale_tun_mode: "userspace-networking" # or "tun"
+pixel_tailscale_ssh_enabled: true
+pixel_tailscale_hostname: "pixel1"
+pixel_tailscale_accept_dns: false
+pixel_tailscale_accept_routes: false
+
+# Auth key (optional; if unset, operator logs in interactively)
+pixel_tailscale_authkey: "{{ vault_pixel_tailscale_authkey | default('') }}"

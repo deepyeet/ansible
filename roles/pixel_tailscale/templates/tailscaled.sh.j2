@@ -1,0 +1,102 @@
+#!/system/bin/sh
+# Managed by Ansible - do not edit manually
+
+trap '' HUP
+
+BASE_DIR="{{ pixel_tailscale_base_dir }}"
+BIN_DIR="{{ pixel_tailscale_bin_dir }}"
+RUN_DIR="{{ pixel_tailscale_run_dir }}"
+STATE_DIR="{{ pixel_tailscale_state_dir }}"
+LOG_FILE="{{ pixel_tailscale_log_path }}"
+SOCK_FILE="{{ pixel_tailscale_socket }}"
+PID_FILE="{{ pixel_tailscale_pid_file }}"
+SUPERVISOR_PID_FILE="{{ pixel_tailscale_supervisor_pid_file }}"
+MAX_LOG_BYTES={{ pixel_tailscale_log_max_bytes }}
+
+mkdir -p "$BASE_DIR" "$BIN_DIR" "$RUN_DIR" "$STATE_DIR"
+chmod 700 "$BASE_DIR" "$RUN_DIR" "$STATE_DIR"
+
+# Ensure CLI wrapper exists in /sbin
+cat > /sbin/tailscale <<'EOF'
+#!/system/bin/sh
+exec {{ pixel_tailscale_bin_dir }}/tailscale --socket={{ pixel_tailscale_socket }} "$@"
+EOF
+chmod 755 /sbin/tailscale
+
+# If invoked with 'run', execute supervisor loop in foreground of this subshell
+if [ "$1" = "run" ]; then
+    cleanup() {
+        if [ -n "$child_pid" ] && kill -0 "$child_pid" 2>/dev/null; then
+            kill "$child_pid" 2>/dev/null
+        fi
+        rm -f "$SOCK_FILE" "$PID_FILE" "$SUPERVISOR_PID_FILE"
+        exit 0
+    }
+    trap cleanup TERM INT HUP
+
+    while true; do
+        echo "[$(date)] Starting tailscaled daemon..." >> "$LOG_FILE"
+        rm -f "$SOCK_FILE"
+        "${BIN_DIR}/tailscaled" \
+            --state="${STATE_DIR}/tailscaled.state" \
+            --socket="${SOCK_FILE}" \
+            --port={{ pixel_tailscale_port }} \
+            --tun={{ pixel_tailscale_tun_mode }} \
+            >> "$LOG_FILE" 2>&1 &
+
+        child_pid=$!
+        echo "$child_pid" > "$PID_FILE"
+        echo "[$(date)] tailscaled running with pid $child_pid" >> "$LOG_FILE"
+
+        wait "$child_pid"
+        exit_code=$?
+        echo "[$(date)] tailscaled exited with code $exit_code. Restarting in 5s..." >> "$LOG_FILE"
+        sleep 5
+    done
+    exit 0
+fi
+
+# 1. Wait for Android boot to finish (networking and wifi ready)
+while [ "$(getprop sys.boot_completed)" != "1" ]; do
+    sleep 2
+done
+
+# 2. Prevent unbounded log growth: rotate if over MAX_LOG_BYTES
+if [ -f "$LOG_FILE" ]; then
+    log_size=$(wc -c < "$LOG_FILE" 2>/dev/null || echo 0)
+    if [ "$log_size" -gt "$MAX_LOG_BYTES" ]; then
+        echo "--- Log rotated on boot: $(date) ---" > "$LOG_FILE"
+    fi
+fi
+
+echo "[$(date)] Starting tailscaled service..." >> "$LOG_FILE"
+
+# 3. Terminate stale supervisor and daemon if already running
+if [ -f "$SUPERVISOR_PID_FILE" ]; then
+    s_pid=$(cat "$SUPERVISOR_PID_FILE" 2>/dev/null)
+    if [ -n "$s_pid" ] && kill -0 "$s_pid" 2>/dev/null; then
+        echo "[$(date)] Stopping existing supervisor (pid $s_pid)..." >> "$LOG_FILE"
+        kill "$s_pid" 2>/dev/null
+    fi
+fi
+if [ -f "$PID_FILE" ]; then
+    d_pid=$(cat "$PID_FILE" 2>/dev/null)
+    if [ -n "$d_pid" ] && kill -0 "$d_pid" 2>/dev/null; then
+        echo "[$(date)] Stopping existing tailscaled (pid $d_pid)..." >> "$LOG_FILE"
+        kill "$d_pid" 2>/dev/null
+    fi
+fi
+pkill -f "${BIN_DIR}/tailscaled" 2>/dev/null || true
+rm -f "$SOCK_FILE" "$PID_FILE" "$SUPERVISOR_PID_FILE"
+
+# 4. TUN device handling if configured for TUN mode
+if [ "{{ pixel_tailscale_tun_mode }}" = "tun" ]; then
+    if [ -c /dev/tun ] && [ ! -e /dev/net/tun ]; then
+        mkdir -p /dev/net
+        ln -sf /dev/tun /dev/net/tun
+    fi
+fi
+
+# 5. Launch supervisor loop in background detached and record supervisor PID
+nohup /system/bin/sh "$0" run </dev/null >> "$LOG_FILE" 2>&1 &
+echo $! > "$SUPERVISOR_PID_FILE"

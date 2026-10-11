@@ -1,0 +1,38 @@
+---
+# tasks/install.yml for pixel_tailscale
+
+- name: Check installed Tailscale binary status
+  ansible.builtin.raw: |
+    if [ -f "{{ pixel_tailscale_bin_dir }}/tailscaled" ] && [ -f "{{ pixel_tailscale_bin_dir }}/tailscale" ]; then
+      d_sha=$(sha256sum "{{ pixel_tailscale_bin_dir }}/tailscaled" | cut -d' ' -f1)
+      c_sha=$(sha256sum "{{ pixel_tailscale_bin_dir }}/tailscale" | cut -d' ' -f1)
+      if [ "$d_sha" = "{{ pixel_tailscale_daemon_checksum }}" ] && [ "$c_sha" = "{{ pixel_tailscale_cli_checksum }}" ]; then
+        echo "UP_TO_DATE"
+        exit 0
+      fi
+    fi
+    echo "NEEDS_INSTALL"
+  register: _pixel_tailscale_bin_check
+  check_mode: false
+  changed_when: false
+
+- name: Set binary installation fact
+  ansible.builtin.set_fact:
+    _pixel_tailscale_needs_install: "{{ 'NEEDS_INSTALL' in (_pixel_tailscale_bin_check.stdout | default('')) }}"
+
+- name: Download and install Tailscale ARM64 binaries
+  ansible.builtin.raw: |
+    set -eu
+    mkdir -p "{{ pixel_tailscale_bin_dir }}" "{{ pixel_tailscale_state_dir }}" "{{ pixel_tailscale_run_dir }}"
+    tmp_dir="{{ pixel_tailscale_base_dir }}/tmp_install"
+    rm -rf "$tmp_dir"
+    mkdir -p "$tmp_dir"
+    curl -f -sL "https://pkgs.tailscale.com/stable/tailscale_{{ pixel_tailscale_version }}_arm64.tgz" -o "$tmp_dir/tailscale.tgz"
+    echo "{{ pixel_tailscale_tarball_checksum }}  $tmp_dir/tailscale.tgz" | sha256sum -c -
+    tar -xzf "$tmp_dir/tailscale.tgz" -C "$tmp_dir"
+    mv "$tmp_dir/tailscale_{{ pixel_tailscale_version }}_arm64/tailscaled" "{{ pixel_tailscale_bin_dir }}/tailscaled"
+    mv "$tmp_dir/tailscale_{{ pixel_tailscale_version }}_arm64/tailscale" "{{ pixel_tailscale_bin_dir }}/tailscale"
+    chmod 755 "{{ pixel_tailscale_bin_dir }}/tailscaled" "{{ pixel_tailscale_bin_dir }}/tailscale"
+    rm -rf "$tmp_dir"
+  when: _pixel_tailscale_needs_install and not ansible_check_mode
+  changed_when: true
