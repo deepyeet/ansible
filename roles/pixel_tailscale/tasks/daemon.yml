@@ -19,7 +19,7 @@
     trap '' HUP
     nohup /data/adb/service.d/tailscaled.sh </dev/null >> /data/adb/tailscale/run/tailscaled.log 2>&1 &
   when:
-    - ('STOPPED' in _pixel_tailscale_daemon_check.stdout) or (_pixel_tailscale_service_deploy is changed)
+    - ('STOPPED' in _pixel_tailscale_daemon_check.stdout) or (_pixel_tailscale_service_deploy is changed) or (_pixel_tailscale_needs_install | default(false) | bool)
     - not ansible_check_mode
   changed_when: true
 

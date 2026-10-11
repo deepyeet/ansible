@@ -1,10 +1,10 @@
 ---
 # defaults/main.yml for pixel_tailscale
 
-pixel_tailscale_version: "1.80.3"
-pixel_tailscale_tarball_checksum: "f7fd05ab7d4e61a36f738728bf862f321531c039b8eeb0b33cd4568f72b01481"
-pixel_tailscale_daemon_checksum: "34db4c0476b9348eff4a647db287de29d3b9932eb6c5134413f5c08e3c6fe4c5"
-pixel_tailscale_cli_checksum: "b201616c4fa827e577ebf3450f30fef4e2a67c3037e7ad270bb2877b1d42d147"
+pixel_tailscale_version: "1.104.1"
+pixel_tailscale_tarball_checksum: "f60294374967f3dfd8cf57bbbd474d6cfce32d123e3a8ddeab82a87940daa806"
+pixel_tailscale_daemon_checksum: "6367abc3ffd608ed64a762928444ee53ac4e99bf19baabb0321852d7f02b10b6"
+pixel_tailscale_cli_checksum: "6c2c134abad7cbbc8bc94a226b2972b4b7d5603daa0ca0bb9dc3b74a1dc15814"
 
 pixel_tailscale_base_dir: "/data/adb/tailscale"
 pixel_tailscale_bin_dir: "{{ pixel_tailscale_base_dir }}/bin"
