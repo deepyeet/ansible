@@ -11,6 +11,8 @@
     - role: backup_target
     - role: samba
     - role: torrenter
+    - role: artis3n.tailscale.machine
+      tags: [tailscale]
 
 
 - name: WSL Dev Environment

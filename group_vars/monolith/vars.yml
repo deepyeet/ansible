@@ -50,3 +50,7 @@ samba_shares:
 # --- Docker Daemon Configuration ---
 docker_daemon_options:
   log-driver: "journald"
+
+# --- Tailscale Configuration ---
+tailscale_oauth_ephemeral: false
+tailscale_args: "--hostname raspberrypi --ssh"
