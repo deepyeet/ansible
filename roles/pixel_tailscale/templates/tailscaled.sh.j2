@@ -25,18 +25,6 @@ exec {{ pixel_tailscale_bin_dir }}/tailscale --socket={{ pixel_tailscale_socket 
 EOF
 chmod 755 /sbin/tailscale
 
-# Ensure /etc/passwd and /etc/group exist for Tailscale SSH without breaking system linker or screencap
-if [ ! -f /system/etc/group ]; then
-    mkdir -p "${BASE_DIR}/etc"
-    if [ ! -f "${BASE_DIR}/etc/ld.config.vndk_lite.txt" ]; then
-        cp -a /system/etc/* "${BASE_DIR}/etc/" 2>/dev/null || true
-    fi
-    echo "root:x:0:0:root:/data/ssh/root:/system/bin/sh" > "${BASE_DIR}/etc/passwd"
-    echo "root:x:0:" > "${BASE_DIR}/etc/group"
-    chmod 644 "${BASE_DIR}/etc/passwd" "${BASE_DIR}/etc/group"
-    mount --bind "${BASE_DIR}/etc" /system/etc
-fi
-
 # If invoked with 'run', execute supervisor loop in foreground of this subshell
 if [ "$1" = "run" ]; then
     cleanup() {
@@ -85,6 +73,18 @@ if [ -f "$LOG_FILE" ]; then
 fi
 
 echo "[$(date)] Starting tailscaled service..." >> "$LOG_FILE"
+
+# 3. Ensure /etc/passwd and /etc/group exist for Tailscale SSH without breaking system linker or screencap
+if [ ! -f /system/etc/group ]; then
+    mkdir -p "${BASE_DIR}/etc"
+    if [ ! -f "${BASE_DIR}/etc/ld.config.vndk_lite.txt" ]; then
+        cp -a /system/etc/* "${BASE_DIR}/etc/" 2>/dev/null || true
+    fi
+    echo "root:x:0:0:root:/data/ssh/root:/system/bin/sh" > "${BASE_DIR}/etc/passwd"
+    echo "root:x:0:" > "${BASE_DIR}/etc/group"
+    chmod 644 "${BASE_DIR}/etc/passwd" "${BASE_DIR}/etc/group"
+    mount --bind "${BASE_DIR}/etc" /system/etc
+fi
 
 # 3. Terminate stale supervisor and daemon if already running
 if [ -f "$SUPERVISOR_PID_FILE" ]; then
