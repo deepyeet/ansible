@@ -39,6 +39,7 @@ if [ "$1" = "run" ]; then
         rm -f "$SOCK_FILE"
         "${BIN_DIR}/tailscaled" \
             --state="${STATE_DIR}/tailscaled.state" \
+            --statedir="${STATE_DIR}" \
             --socket="${SOCK_FILE}" \
             --port={{ pixel_tailscale_port }} \
             --tun={{ pixel_tailscale_tun_mode }} \
