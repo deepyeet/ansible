@@ -74,7 +74,13 @@ fi
 
 echo "[$(date)] Starting tailscaled service..." >> "$LOG_FILE"
 
-# 3. Ensure /etc/passwd and /etc/group exist for Tailscale SSH without breaking system linker or screencap
+# 3. Ensure /etc/passwd and /etc/group exist for Tailscale SSH.
+# Android Bionic libc has no /etc/passwd or /etc/group; Go's os/user package in Tailscale SSH
+# reads them directly. On Android 10 SAR, /system is read-only (dm-verity), so we cannot create
+# them directly in /system/etc.
+# NOTE: We MUST copy the 43 original /system/etc files verbatim rather than symlinking.
+# Symlinks create circular resolution when bind-mounted over /system/etc, which hides
+# ld.config.vndk_lite.txt from the dynamic linker and breaks binaries like screencap (libandroidicu.so).
 if [ ! -f /system/etc/group ]; then
     mkdir -p "${BASE_DIR}/etc"
     if [ ! -f "${BASE_DIR}/etc/ld.config.vndk_lite.txt" ]; then
