@@ -29,6 +29,7 @@
       # Development tools
       - python3-venv
       - luarocks
+      - sqlite3
     state: present
 
 - name: Install 1Password CLI

@@ -59,5 +59,6 @@ tailscale_args: "--hostname raspberrypi --ssh"
 host_managed_users:
   - username: "muse"
     shell: /bin/bash
+    linger: true
     authorized_keys:
       - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAID5por5MjFWxS3sNsr/OuE7PLYiKgzZPVusA3Tp4NDXf hatch"

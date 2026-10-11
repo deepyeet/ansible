@@ -18,6 +18,15 @@
   loop_control:
     label: "{{ item.username }}"
 
+- name: Configure lingering for managed users
+  ansible.builtin.command:
+    cmd: "loginctl enable-linger {{ item.username }}"
+    creates: "/var/lib/systemd/linger/{{ item.username }}"
+  loop: "{{ managed_users }}"
+  loop_control:
+    label: "{{ item.username }}"
+  when: item.linger | default(false) | bool
+
 - name: Manage authorized keys for users
   ansible.posix.authorized_key:
     user: "{{ item.username }}"
