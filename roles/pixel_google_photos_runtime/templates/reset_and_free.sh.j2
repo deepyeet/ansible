@@ -24,6 +24,11 @@ syn() {
 }
 
 # --- RAW DRIVERS ---
+# NOTE (2026-10-11): the synaptics_dsxv26 touchscreen is a Type-B (slot-based)
+# multitouch device. Every touch sequence MUST select ABS_MT_SLOT first
+# (sendevent <dev> 3 47 0) or the taps silently never register. Verified:
+# 0/3 taps worked without slot selection, 2/2 with it. This was the root
+# cause of the script being broken - no tap ever landed.
 
 raw_power() {
     sendevent {{ pixel_runtime_config.power_event }} 1 116 1; sendevent {{ pixel_runtime_config.power_event }} 0 0 0
@@ -34,12 +39,16 @@ raw_power() {
 raw_tap() {
     local X=$1
     local Y=$2
+    # DOWN (slot must be selected first on Type-B devices)
+    touch_event 3 47 0
     touch_event 3 57 100
     touch_event 3 53 $X
     touch_event 3 54 $Y
     touch_event 3 58 50
     syn
-    sleep 0.1
+    sleep 0.15
+    # UP
+    touch_event 3 47 0
     touch_event 3 57 4294967295
     syn
 }
@@ -49,6 +58,7 @@ raw_swipe_up() {
     local ID=101
     
     # START (Bottom)
+    touch_event 3 47 0
     touch_event 3 57 $ID
     touch_event 3 53 $X
     touch_event 3 54 1600
@@ -58,6 +68,7 @@ raw_swipe_up() {
 
     # GLIDE (Slower interpolation for better registration)
     for Y in 1300 1000 700 400; do
+        touch_event 3 47 0
         touch_event 3 53 $X
         touch_event 3 54 $Y
         touch_event 3 58 50
@@ -66,6 +77,7 @@ raw_swipe_up() {
     done
 
     # RELEASE
+    touch_event 3 47 0
     touch_event 3 57 4294967295
     syn
 }
