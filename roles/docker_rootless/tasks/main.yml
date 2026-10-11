@@ -56,13 +56,3 @@
       environment:
         XDG_RUNTIME_DIR: "/run/user/{{ getent_passwd[item][1] }}"
 
-    - name: Configure DOCKER_HOST in user shell profiles
-      become: true
-      become_user: "{{ item }}"
-      ansible.builtin.lineinfile:
-        path: "{{ getent_passwd[item][4] }}/.bashrc"
-        line: 'export DOCKER_HOST=unix:///run/user/{{ getent_passwd[item][1] }}/docker.sock'
-        state: present
-        create: true
-        mode: '0644'
-      loop: "{{ docker_rootless_users }}"
