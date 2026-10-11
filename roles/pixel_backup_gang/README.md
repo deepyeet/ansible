@@ -1,7 +1,8 @@
 # pixel_backup_gang
 
-Packages the captured storage helpers from `master-hax/pixel-backup-gang`, including
-the local mount-helper modifications. Do not replace them with current upstream.
+Packages storage helpers from `master-hax/pixel-backup-gang`. The captured nine
+helpers match upstream tag `0.0.8` when rendered with the original paths; the
+original installation revision is unknown. Changes are adopted selectively.
 `pbg_config` is the storage profile; it does not include NAS topology or host hashes.
 
 These are mount helpers, not an uploader or a Magisk module. On this phone,
@@ -10,8 +11,12 @@ mounts ext4 at `drive_mount`, then exposes the drive's `the_binding` subtree
 through Android 10's sdcardfs at `bind_path`. Google Photos sees shared storage.
 The NAS uploads into that exposed subtree.
 
-The nine source templates preserve the existing helper bundle. The custom
-`my_drive_id.txt` belongs to the farm runtime that reads it.
+The mount helper has explicit `set -e` so failures propagate even when invoked
+through `sh`, and scopes recursive ownership changes to `the_binding` (as in
+upstream commit `f2c3df5`). A failed mount leaves any already completed steps in
+place for diagnosis; the helper does not attempt automatic unmount or rollback.
+SELinux remains permissive pending the [migration plan](../../playbooks/PHOTO_BACKUP_SELINUX.md).
+The custom `my_drive_id.txt` belongs to the farm runtime that reads it.
 
 | Helper | Place in this installation |
 | --- | --- |

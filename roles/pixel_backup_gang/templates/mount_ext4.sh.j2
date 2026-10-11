@@ -6,6 +6,10 @@
 # Usage: ./mount_ext4.sh <BLOCK_DEVICE_PATH>
 ################################################################################
 
+# Farm startup invokes this through `sh`, which ignores the shebang's flags.
+# Stop on failure before touching the backing directory or reporting success.
+set -e
+
 if [ "$(readlink /proc/self/ns/mnt)" != "$(readlink /proc/1/ns/mnt)" ]; then
   echo "not running in global mount namespace, try elevating first"
   exit 1
@@ -35,7 +39,7 @@ mount \
 
 mkdir -p -v "$drive_mount_dir"/the_binding
 chmod -R 777 "$drive_mount_dir"/the_binding
-chown -R sdcard_rw:sdcard_rw "$drive_mount_dir"
+chown -R sdcard_rw:sdcard_rw "$drive_mount_dir"/the_binding
 
 # may be possible to avoid this by mounting to /mnt/expand/<uuid>
 # TODO: use magiskpolicy https://github.com/topjohnwu/Magisk/blob/master/docs/tools.md#magiskpolicy

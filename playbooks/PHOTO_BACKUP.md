@@ -208,11 +208,14 @@ start it once these requirements hold.
   no `.nomedia` marker during this inspection. Its absence is reported, not
   silently repaired. NAS's four-minute mtime rule also does not prove a phone
   has finished writing to the NAS Inbox.
-- **Mount failures:** startup invokes `sh ./mount_ext4.sh`, bypassing the
-  helper's `-e` shebang. Its final success message can mask intermediate errors.
-  The captured helper recursively changes drive permissions and sets SELinux
-  permissive. Current upstream uses a different labeling approach; these are
-  deliberate follow-up changes, not an automatic upgrade.
+- **Mount failures:** the mount helper sets `-e` explicitly, including when
+  startup invokes it through `sh`. Failed commands return an error to startup,
+  which stops before launching Photos or background workers. A failure after
+  the ext4 mount can leave a partial mount setup that needs diagnosis.
+  Recursive ownership and permissions apply only to `the_binding`.
+- **SELinux:** the mount helper still sets permissive mode. Enforcing mode needs
+  coordinated labeling and pipeline verification; see the
+  [migration plan](PHOTO_BACKUP_SELINUX.md).
 - **Boot failure:** a missing drive causes startup to exit before either worker
   starts. Reconnecting a disk afterward does not rerun startup. The explicit
   activation play handles only a fully stopped farm. Partial recovery still
@@ -220,8 +223,9 @@ start it once these requirements hold.
 - **Cloud completion:** NAS treats local disappearance as completion. Manual
   deletion or incorrect UI cleanup can produce false completion. No Google API
   receipt or end-to-end content verification is implemented.
-- **Reproducibility:** captured helper bytes are versioned in this repository;
-  the upstream revision is unknown. The inspected platform was Magisk `30.7`,
+- **Reproducibility:** the captured nine helpers match upstream tag `0.0.8`;
+  the original installation revision is unknown. Local changes are documented
+  in the storage role. The inspected platform was Magisk `30.7`,
   SSH module `v0.27`,
   ACC `v2025.5.18-dev`, and Photos `7.57.0.843750501`. These are observations,
   not upgrade targets. Module/APK recovery artifacts, Google setup, ACC policy,
