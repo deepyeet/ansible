@@ -4,17 +4,25 @@ db="$1"
 key="${2:-}"
 case "$db" in
   passwd)
-    if [ -n "$key" ]; then
-      grep -E "^($key:|[^:]*:[^:]*:$key:)" /etc/passwd 2>/dev/null
-    else
-      cat /etc/passwd 2>/dev/null
+    if [ -f /etc/passwd ]; then
+      if [ -n "$key" ]; then
+        grep -E "^($key:|[^:]*:[^:]*:$key:)" /etc/passwd 2>/dev/null
+      else
+        cat /etc/passwd 2>/dev/null
+      fi
+    elif [ "$key" = "root" ] || [ "$key" = "0" ] || [ -z "$key" ]; then
+      echo "root:x:0:0:root:/data/ssh/root:/system/bin/sh"
     fi
     ;;
   group)
-    if [ -n "$key" ]; then
-      grep -E "^($key:|[^:]*:[^:]*:$key:)" /etc/group 2>/dev/null
-    else
-      cat /etc/group 2>/dev/null
+    if [ -f /etc/group ]; then
+      if [ -n "$key" ]; then
+        grep -E "^($key:|[^:]*:[^:]*:$key:)" /etc/group 2>/dev/null
+      else
+        cat /etc/group 2>/dev/null
+      fi
+    elif [ "$key" = "root" ] || [ "$key" = "0" ] || [ -z "$key" ]; then
+      echo "root:x:0:"
     fi
     ;;
   *)

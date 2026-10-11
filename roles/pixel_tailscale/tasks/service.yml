@@ -73,21 +73,11 @@
       "755" \
       "{{ _pixel_tailscale_wrapper_content | b64encode }}"
 
-    # 5. User & group database files for Tailscale SSH resolution (/system/etc and module overlay)
-    deploy_file "/system/etc/passwd" \
-      "{{ _pixel_tailscale_passwd_content | hash('sha256') }}" \
-      "644" \
-      "{{ _pixel_tailscale_passwd_content | b64encode }}"
-
+    # 5. User & group database files for Tailscale SSH resolution (module overlay)
     deploy_file "/data/adb/modules/tailscale/system/etc/passwd" \
       "{{ _pixel_tailscale_passwd_content | hash('sha256') }}" \
       "644" \
       "{{ _pixel_tailscale_passwd_content | b64encode }}"
-
-    deploy_file "/system/etc/group" \
-      "{{ _pixel_tailscale_group_content | hash('sha256') }}" \
-      "644" \
-      "{{ _pixel_tailscale_group_content | b64encode }}"
 
     deploy_file "/data/adb/modules/tailscale/system/etc/group" \
       "{{ _pixel_tailscale_group_content | hash('sha256') }}" \

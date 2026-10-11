@@ -3,16 +3,6 @@
 
 export PATH="/sbin:/system/bin:/system/xbin:$PATH"
 
-# Ensure passwd and group files exist for Tailscale SSH identity resolution on Android
-if [ ! -f /etc/passwd ]; then
-    echo "root:x:0:0:root:/data/ssh/root:/system/bin/sh" > /system/etc/passwd 2>/dev/null || true
-    chmod 644 /system/etc/passwd 2>/dev/null || true
-fi
-if [ ! -f /etc/group ]; then
-    echo "root:x:0:" > /system/etc/group 2>/dev/null || true
-    chmod 644 /system/etc/group 2>/dev/null || true
-fi
-
 trap '' HUP
 
 BASE_DIR="{{ pixel_tailscale_base_dir }}"
