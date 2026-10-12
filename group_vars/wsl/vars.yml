@@ -1,6 +1,3 @@
 ---
 # --- Tailscale Configuration ---
-tailscale_oauth_ephemeral: false
-tailscale_args: "--hostname juju-wsl --ssh"
-tailscale_tags:
-  - "internal"
+tailscale_up_skip: true
