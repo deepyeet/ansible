@@ -24,6 +24,8 @@
   - role: user_friendly
   - role: users
   - role: dotfiles
+  - role: artis3n.tailscale.machine
+    tags: [tailscale]
 
 # Manage source files; activation remains a separate, explicit playbook.
 - name: Manage the photo backup installation
