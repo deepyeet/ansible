@@ -103,34 +103,55 @@ echo "2. Going Home..."
 raw_tap $TAP_HOME_X $TAP_HOME_Y
 sleep 4  # Increased: Home screen redraw lag
 
-echo "3. Resetting Photos App..."
+echo "3. Opening the Free-up page directly (deep link)..."
+# The old flow tapped through the account menu (profile -> "Free up space"
+# row). That menu's geometry is STATE-DEPENDENT: the storage card grows a
+# warning block when items can't be backed up, and the Backup pill's status
+# text wraps, shifting every row below by ~260px. With backup nearly done
+# (2026-10-13) the (540,1572) tap landed on "Photos settings" instead.
+# The deep link resolves to .devicemanagement.activity.FreeUpSpaceActivity
+# and lands on the Free-up page from any prior state - no menu taps at all.
+# (Starting FreeUpSpaceActivity by component name directly does NOT work;
+# it is not exported and the intent is dropped. The deep-link entry works.)
 am start -n com.google.android.apps.photos/.home.HomeActivity --activity-clear-top
 sleep 8  # Increased: Cold start insurance
-raw_tap $TAP_BACK_X $TAP_BACK_Y
-sleep 2
-am start -n com.google.android.apps.photos/.home.HomeActivity --activity-clear-top
-sleep 6  # Increased: Warm start settle time
+am start -n com.google.android.apps.photos/.home.entrypoint.deeplink.HomeDeepLinkActivity -a android.intent.action.VIEW -d "https://photos.google.com/link/freeupspace"
+# Pin the display on while powered for the wait+confirm window: a long
+# blind wait collides with the 60s screen_off_timeout (stay_on_while_
+# plugged_in is 0), the display dozes, and taps stop reaching the app -
+# the phone is left sitting on the Free-up page un-clicked (root cause of
+# the 2026-10-13 failure, reproduced live: mWakefulness=Dozing during the
+# Confirming step). Note stayon did not actually hold the display on a
+# 2026-10-13 test run - the wakefulness check before Confirming is the
+# load-bearing backstop; keep both.
+svc power stayon true
+# Wait until the Free-up activity is actually foreground (up to ~90s),
+# then give its button time to compute the freeable size and render.
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
+  sleep 5
+  if dumpsys window 2>/dev/null | grep mCurrentFocus | grep -q FreeUpSpaceActivity; then
+    break
+  fi
+done
+sleep 15
 
-echo "4. Tapping Profile..."
-raw_tap $TAP_PROFILE_X $TAP_PROFILE_Y
-sleep 8  # Increased: Menu animation lag
-
-echo "5. Tapping Free Up Space..."
-raw_tap $TAP_MENU_FREE_UP_X $TAP_MENU_FREE_UP_Y
-sleep 60 # CRITICAL: the Free-up page's button renders slowly on Pixel 1,
-# especially cold and under load. 30s was not enough (verified 2026-10-12:
-# a full run with 30s freed nothing - the confirm tap hit a page with no
-# button yet).
-
-echo "6. Confirming..."
+echo "4. Confirming..."
+if ! dumpsys power | grep -q "mWakefulness=Awake"; then
+  echo "   -> Display dozed during wait. Re-waking..."
+  raw_power
+  sleep 3
+  wm dismiss-keyguard
+  sleep 2
+fi
 raw_tap $TAP_CONFIRM_X $TAP_CONFIRM_Y
 sleep 15
 # Idempotent second tap: if the first landed, the page is now a progress
 # screen and this tap hits empty space; if the button rendered late, this
 # is the one that starts the freeing.
 raw_tap $TAP_CONFIRM_X $TAP_CONFIRM_Y
+svc power stayon false
 
 # --- CLEANUP ---
 sleep 4
-echo "7. Done. Going Home."
+echo "5. Done. Going Home."
 raw_tap $TAP_HOME_X $TAP_HOME_Y
