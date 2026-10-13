@@ -40,32 +40,23 @@ pixel_runtime_config:
   # Kernel crash recovery, not a disk I/O timeout or worker restart policy.
   panic_delay: 5
   softlockup_panic: 1
-  profile_x: 990
-  profile_y: 140
-  # All three tap targets re-verified 2026-10-12 against Photos 7.96 (after
-  # the 7.57 -> 7.96 sideload update): values UNCHANGED. Profile tap opened
-  # the account menu (avatar center measured 996,146), free tap opened the
-  # Free-up page, confirm button center measured (540, 1703). The 7.96 UI
-  # changes (bottom nav Search->Ask, Create tab) do not intersect this flow.
-  # free_* verified 2026-10-12 against Photos 7.57 ("Free up space on this
-  # device" row center). The 2026-10-11 value 1500 landed in the dead gap
-  # between the Backup pill and the Free-up pill and hit nothing (verified
-  # live: menu stayed open). 1385 before that hit the Backup row.
-  free_x: 540
-  free_y: 1572
-  # confirm_* verified 2026-10-12: the Free-up row opens a full page with a
-  # single bottom button "Free up N GB"; center (540, 1703). Page opens even
-  # with backup incomplete.
+  # The free-up flow no longer taps through the account menu (profile/free
+  # coordinates removed 2026-10-13): the menu's geometry is state-dependent
+  # and shifted ~260px between backup states, breaking fixed taps. The
+  # script deep-links to the Free-up page instead; the only live tap
+  # targets are the page's confirm button and the nav Home button.
+  # confirm_* verified 2026-10-12 against Photos 7.96 and exercised
+  # end-to-end 2026-10-13: the Free-up page has a single bottom button
+  # "Free up N GB"; center (540, 1703). Page opens even with backup
+  # incomplete.
   confirm_x: 540
   confirm_y: 1703
   home_x: 540
   home_y: 1850
-  back_x: 200
-  back_y: 1850
   power_event: /dev/input/event4
   touch_event: /dev/input/event2
   # The captured cleanup script uses raw input events and fixed coordinates.
-  # These are prerequisites for those taps, not proof that Photos' menu matches.
+  # These are prerequisites for those taps, not proof that Photos' UI matches.
   screen_size: 1080x1920
   screen_density: 420
   power_device_name: gpio-keys

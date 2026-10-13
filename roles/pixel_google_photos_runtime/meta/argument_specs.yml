@@ -81,18 +81,6 @@ argument_specs:
           softlockup_panic:
             type: int
             required: true
-          profile_x:
-            type: int
-            required: true
-          profile_y:
-            type: int
-            required: true
-          free_x:
-            type: int
-            required: true
-          free_y:
-            type: int
-            required: true
           confirm_x:
             type: int
             required: true
@@ -103,12 +91,6 @@ argument_specs:
             type: int
             required: true
           home_y:
-            type: int
-            required: true
-          back_x:
-            type: int
-            required: true
-          back_y:
             type: int
             required: true
       pixel_runtime_healthcheck_url:

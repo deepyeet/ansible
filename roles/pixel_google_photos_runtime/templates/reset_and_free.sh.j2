@@ -1,17 +1,36 @@
 #!/system/bin/sh
+#
+# reset_and_free.sh - opens Google Photos' "Free up space" page via its
+# deep link and confirms the free-up. Invoked by pixel_manager.sh on the
+# NAS every cleanup_interval (8h) when the pipeline is active.
+#
+# Flow (current design, 2026-10-13): wake -> Home -> launch Photos ->
+# deep link to FreeUpSpaceActivity -> wait for the page -> confirm.
+# The pre-2026-10-13 flow tapped through the account menu (profile ->
+# "Free up space" row); that menu's geometry is state-dependent (rows
+# shift ~260px between backup states), so fixed menu taps were retired.
+# The step-3 comment below has the full story.
+#
+# Device facts that matter (event numbers can shift across boots;
+# re-verify with: getevent -pl):
+# - Touch: {{ pixel_runtime_config.touch_event }} ({{ pixel_runtime_config.touch_device_name }},
+#   Type-B slot-based; ABS_MT_SLOT must be selected before every touch -
+#   see the NOTE above raw_tap).
+# - Power: {{ pixel_runtime_config.power_event }} ({{ pixel_runtime_config.power_device_name }}).
+# - If the phone is heavily loaded, taps may be delayed/dropped;
+#   check `uptime` first.
 
 # --- CONFIG ---
 # Pixel 1 (1080x1920)
-TAP_PROFILE_X={{ pixel_runtime_config.profile_x }}
-TAP_PROFILE_Y={{ pixel_runtime_config.profile_y }}
-TAP_MENU_FREE_UP_X={{ pixel_runtime_config.free_x }}
-TAP_MENU_FREE_UP_Y={{ pixel_runtime_config.free_y }}
 TAP_CONFIRM_X={{ pixel_runtime_config.confirm_x }}
 TAP_CONFIRM_Y={{ pixel_runtime_config.confirm_y }}
 TAP_HOME_X={{ pixel_runtime_config.home_x }}
 TAP_HOME_Y={{ pixel_runtime_config.home_y }}
-TAP_BACK_X={{ pixel_runtime_config.back_x }}
-TAP_BACK_Y={{ pixel_runtime_config.back_y }}
+
+# Never leave the display pinned on if the script dies mid-run: the
+# `svc power stayon true` window in step 3 is paired with this EXIT trap
+# (stayon false when it was never enabled is a no-op).
+trap 'svc power stayon false' EXIT
 
 # --- HELPERS ---
 
