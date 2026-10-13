@@ -1,14 +1,18 @@
+# NAS account that owns and runs the pixel ingest manager: the DSM task runs
+# as this user, and the script, its state files and its SSH key live in this
+# user's home directory.
+photo_manager_user: muse
 photo_ingest:
   base_dir: /volume1/pixel
-  ssh_key_path: /volume1/homes/admin/keys/id_ed25519
+  ssh_key_path: /volume1/homes/{{ photo_manager_user }}/keys/id_ed25519
   ingest_age: 4
   ingest_min_date: '2020-01-01'
   rsync_timeout: 60
   cleanup_interval: 28800
-  state_dir: /volume1/homes/admin
+  state_dir: /volume1/homes/{{ photo_manager_user }}
 # Manually configured DSM prerequisites, inspected by the Synology play tasks.
 synology_photo_backup:
-  owner: admin
+  owner: '{{ photo_manager_user }}'
   group: users
   volume:
     path: /volume1

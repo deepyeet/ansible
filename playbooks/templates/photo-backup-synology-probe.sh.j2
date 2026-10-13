@@ -16,6 +16,6 @@ printf '%s\n' "$t" | grep -Fq {{ expected | quote }} || exit 45
 {% endfor %}
 printf '%s\n' "$t" | grep -Eq 'State: \[(enabled|disabled)\]' || exit 45
 echo PREREQUISITES_OK
-echo 'TASK_DEFINITION_MATCH: admin task configured every five minutes'
+echo 'TASK_DEFINITION_MATCH: {{ synology_photo_backup.owner }} task configured every five minutes'
 echo 'UNKNOWN: authenticated sudo entitlement and admin SSH key/trust have not been verified'
 echo 'UNKNOWN: privileged task execution status is not accessible as the SSH login account'

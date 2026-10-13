@@ -28,7 +28,8 @@ The pipeline runs platform/source preflight once before applying.
 
 A matching source never invokes remote modules or sudo. A changed source needs
 `photo_ingest_maintenance_ready` from the play's paused/idle scheduler observation
-and authenticated root escalation to publish an admin:users-owned file. Check
+and authenticated root escalation to publish a file owned by the configured
+manager user (`photo_manager_user`, muse:users on ds223j). Check
 mode only reports that change. Secret content is neither logged nor diffed.
 The role never runs the manager, rsync, cleanup or healthcheck calls.
 

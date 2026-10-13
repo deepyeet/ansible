@@ -37,7 +37,7 @@ flowchart TD
     E --> B[sdcardfs: the_binding exposed in Android shared storage]
     B --> P[Launch Google Photos]
     P --> W[Generate watchdog_runner.sh; launch watchdog and health loop]
-    N[DSM scheduler: admin runs pixel_manager.sh] --> C[Check Pixel drive canary]
+    N[DSM scheduler: muse runs pixel_manager.sh] --> C[Check Pixel drive canary]
     C --> T[rsync NAS Queue to Pixel .staging]
     T --> I[Promote complete files to incoming]
     I --> P
@@ -116,7 +116,7 @@ only, never external photo directories. See Ansible's guidance on
 [Python-free targets](https://docs.ansible.com/ansible/latest/collections/ansible/builtin/raw_module.html).
 
 On NAS, changed files use the standard `ansible.builtin.template` module with
-`become_user: root`, owner `admin`, group `users`, and the captured mode. Before
+`become_user: root`, owner `muse` (the configured `photo_manager_user`), group `users`, and the captured mode. Before
 that write, an `id -u` task must prove root access. Matching files need no sudo.
 For changes, add **`ansible_become_password` inside the encrypted**
 `group_vars/photo_controllers/vault.yml` using `ansible-vault edit`; never store

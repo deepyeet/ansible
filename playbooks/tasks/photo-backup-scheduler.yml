@@ -3,7 +3,8 @@
 - name: Validate the manually configured DSM scheduler and volume
   ansible.builtin.assert:
     that:
-      - synology_photo_backup.owner == 'admin'
+      - photo_manager_user is match('^[a-z_][a-z0-9_-]*$')
+      - synology_photo_backup.owner == photo_manager_user
       - synology_photo_backup.schedule.managed_by == 'dsm_ui'
       - synology_photo_backup.schedule.task_id is integer
       - synology_photo_backup.schedule.task_id > 0
