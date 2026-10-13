@@ -42,25 +42,28 @@ pixel_runtime_config:
   softlockup_panic: 1
   profile_x: 990
   profile_y: 140
-  # free_* verified 2026-10-11 against current Photos UI ("Free up space on
-  # this device" row). Old (508, 1385) hit the Backup row.
+  # free_* verified 2026-10-12 against Photos 7.57 ("Free up space on this
+  # device" row center). The 2026-10-11 value 1500 landed in the dead gap
+  # between the Backup pill and the Free-up pill and hit nothing (verified
+  # live: menu stayed open). 1385 before that hit the Backup row.
   free_x: 540
-  free_y: 1500
-  # confirm_* NOT verified - the Free up space dialog would not open during
-  # testing (backup incomplete). Verify visually before a destructive run.
-  confirm_x: 553
-  confirm_y: 1716
+  free_y: 1572
+  # confirm_* verified 2026-10-12: the Free-up row opens a full page with a
+  # single bottom button "Free up N GB"; center (540, 1703). Page opens even
+  # with backup incomplete.
+  confirm_x: 540
+  confirm_y: 1703
   home_x: 540
   home_y: 1850
   back_x: 200
   back_y: 1850
-  power_event: /dev/input/event0
+  power_event: /dev/input/event4
   touch_event: /dev/input/event2
   # The captured cleanup script uses raw input events and fixed coordinates.
   # These are prerequisites for those taps, not proof that Photos' menu matches.
   screen_size: 1080x1920
   screen_density: 420
-  power_device_name: qpnp_pon
+  power_device_name: gpio-keys
   touch_device_name: synaptics_dsxv26
 
 # Expected effective UID for the management SSH login, separate from file ownership.
