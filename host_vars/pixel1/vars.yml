@@ -42,6 +42,11 @@ pixel_runtime_config:
   softlockup_panic: 1
   profile_x: 990
   profile_y: 140
+  # All three tap targets re-verified 2026-10-12 against Photos 7.96 (after
+  # the 7.57 -> 7.96 sideload update): values UNCHANGED. Profile tap opened
+  # the account menu (avatar center measured 996,146), free tap opened the
+  # Free-up page, confirm button center measured (540, 1703). The 7.96 UI
+  # changes (bottom nav Search->Ask, Create tab) do not intersect this flow.
   # free_* verified 2026-10-12 against Photos 7.57 ("Free up space on this
   # device" row center). The 2026-10-11 value 1500 landed in the dead gap
   # between the Backup pill and the Free-up pill and hit nothing (verified
