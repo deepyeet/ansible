@@ -59,6 +59,7 @@ class PixelTailscaleTemplateTests(unittest.TestCase):
         self.assertIn("--statedir=", script)
         self.assertIn("/system/etc/group", script)
         self.assertIn("mount --bind", script)
+        self.assertIn("restorecon", script)
 
     def test_render_tailscale_wrapper_script(self):
         wrapper = render_template(

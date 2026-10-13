@@ -81,6 +81,9 @@ echo "[$(date)] Starting tailscaled service..." >> "$LOG_FILE"
 # NOTE: We MUST copy the 43 original /system/etc files verbatim rather than symlinking.
 # Symlinks create circular resolution when bind-mounted over /system/etc, which hides
 # ld.config.vndk_lite.txt from the dynamic linker and breaks binaries like screencap (libandroidicu.so).
+# NOTE: Because ${BASE_DIR} is in /data/adb (labeled adb_data_file), bind-mounting it over
+# /system/etc inherits adb_data_file, which SELinux in Enforcing mode blocks app domains (GMS, photos)
+# and netd from reading. We MUST run restorecon -R /system/etc to restore system_file contexts.
 if [ ! -f /system/etc/group ]; then
     mkdir -p "${BASE_DIR}/etc"
     if [ ! -f "${BASE_DIR}/etc/ld.config.vndk_lite.txt" ]; then
@@ -90,6 +93,9 @@ if [ ! -f /system/etc/group ]; then
     echo "root:x:0:" > "${BASE_DIR}/etc/group"
     chmod 644 "${BASE_DIR}/etc/passwd" "${BASE_DIR}/etc/group"
     mount --bind "${BASE_DIR}/etc" /system/etc
+    restorecon -R /system/etc 2>/dev/null || true
+elif [ "$(ls -dZ /system/etc 2>/dev/null | awk '{print $1}')" = "u:object_r:adb_data_file:s0" ]; then
+    restorecon -R /system/etc 2>/dev/null || true
 fi
 
 # 3. Terminate stale supervisor and daemon if already running

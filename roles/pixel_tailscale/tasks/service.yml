@@ -105,7 +105,17 @@
       echo "{{ _pixel_tailscale_group_content }}" > "{{ pixel_tailscale_base_dir }}/etc/group"
       chmod 644 "{{ pixel_tailscale_base_dir }}/etc/passwd" "{{ pixel_tailscale_base_dir }}/etc/group"
       mount --bind "{{ pixel_tailscale_base_dir }}/etc" /system/etc
+      restorecon -R /system/etc 2>/dev/null || true
       changed=1
+    fi
+
+    # 8. Ensure SELinux context on /system/etc is restored from adb_data_file
+    if mount | grep -q ' /system/etc '; then
+      current_ctx=$(ls -dZ /system/etc 2>/dev/null | awk '{print $1}')
+      if [ "$current_ctx" = "u:object_r:adb_data_file:s0" ]; then
+        restorecon -R /system/etc 2>/dev/null || true
+        changed=1
+      fi
     fi
 
     if [ "$changed" -eq 1 ]; then
