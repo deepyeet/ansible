@@ -18,6 +18,50 @@ and the host's recovery state are small overwritten files used to coordinate
 retries. Healthy poll messages are suppressed in the journal, but Healthchecks
 still receives a success ping on every poll.
 
+## Monitor statuses and alerting
+
+The monitor (`roles/torrenter/files/transmission-healthcheck/check.py`) publishes
+its latest observation to `recovery-state/monitor.json` and pings Healthchecks on
+every poll: a success ping only for `HEALTHY`, a `/fail` ping for every other
+status. Checks run in a fixed order — Gluetun VPN status, Gluetun forwarded
+port, Transmission peer port (a mismatch is repaired in place), external port
+check, then per-torrent errors — so a late-stage status implies the earlier
+stages passed.
+
+| Status | Meaning | Host recovery (`recover.py`) |
+| --- | --- | --- |
+| `HEALTHY` | Ports match and are externally open; no torrent local errors | Clears failure state |
+| `VPN_DOWN` | VPN stopped/starting/stopping; a stopped VPN gets a start-only attempt | Recoverable |
+| `NO_PORT` | Gluetun forwarded port is 0; 3 consecutive observations trigger a VPN cycle | Recoverable |
+| `CLOSED` | Forwarded port is externally closed; 3 consecutive observations trigger a VPN cycle | Recoverable |
+| `MISMATCH` | Transmission did not adopt the forwarded port during repair | Recoverable |
+| `API_UNREACHABLE` | Gluetun control API unreachable or erroring | Recoverable |
+| `TR_UNREACHABLE` | Transmission RPC unreachable or rejecting requests | Recoverable |
+| `RECOVERY_FAILED` | A VPN stop/start transition failed or timed out | Recoverable |
+| `MONITOR_ERROR` | Unexpected exception inside the monitor itself | Recoverable |
+| `CONFIG_ERROR` | Bad credentials or invalid values from Gluetun/Transmission | Report-only |
+| `STATE_ERROR` | Monitor/recovery state files unreadable or invalid | Report-only |
+| `PORTCHECK_UNKNOWN` | External port checker (portcheck.transmissionbt.com) unavailable | Report-only |
+| `SYS_ERR` | At least one torrent reports a local error (see below) | Report-only |
+
+Recoverable statuses count toward stack recovery only while the monitor record
+marks them `recoverable: true` and the fault persists for
+`torrenter_stack_failure_seconds` (see the host timer description above).
+Report-only statuses never trigger a VPN cycle or a stack recreation; they exist
+so a human sees a fault that automation cannot fix.
+
+Known noise problem (identified 2026-10-18): the per-torrent check runs last
+and is not debounced. If any loaded torrent has Transmission RPC `error == 3`
+(`TR_STAT_LOCAL_ERROR` in Transmission 4.0.x: local trouble such as disk full,
+permissions, or missing files — tracker errors are code 2 and are ignored), the
+monitor returns `SYS_ERR TORRENT_ID_<id>` for that poll. A single persistently
+erroring torrent therefore sends a Healthchecks `/fail` ping every five
+minutes even though the VPN, ports, and daemon are healthy, and the message
+carries only the first erroring torrent's integer ID — an identifier that is
+not stable across daemon restarts — while the torrent `name` and `errorString`
+the monitor already fetched are discarded. With ~1,400 torrents loaded, at
+least one local error is a routine condition, not a stack outage.
+
 `torrenter_recovery_enabled: false` disables monitor mutations and the host timer
 at the next Ansible deployment. For temporary maintenance on an already deployed
 host, stop and disable `torrenter-recovery.timer`, then stop
