@@ -1,4 +1,11 @@
-"""Observe Transmission's VPN port and perform bounded, verified repairs."""
+"""Observe Transmission's VPN port and perform bounded, verified repairs.
+
+Per-torrent local errors are observational only: they are logged with the
+torrent's name, hash, and error string, and counted in the healthy reason.
+A single torrent's local trouble (missing files, permissions) is not a
+daemon, VPN, or port failure, is not recoverable by this monitor, and must
+not fail the Healthchecks ping.
+"""
 
 import json
 import logging
@@ -454,11 +461,36 @@ class Monitor:
             return "CLOSED", f"CLOSED_COUNT_{self.closed_count}", True
         self.closed_count = 0
         stats = self._rpc("session-stats")
-        torrents = self._rpc("torrent-get", {"fields": ["id", "name", "error", "errorString"]})
+        torrents = self._rpc("torrent-get", {"fields": ["id", "hashString", "name", "error", "errorString"]})
+        # Transmission error 3 is TR_STAT_LOCAL_ERROR (local trouble such as
+        # missing files or permissions on that one torrent). It says nothing
+        # about the daemon, VPN, or forwarded port verified above, and no
+        # recovery in this monitor or in recover.py can act on it, so it is
+        # reported in the log and the healthy reason instead of failing the
+        # check. Tracker errors (2) and warnings (1) remain ignored.
         errors = [item for item in torrents.get("torrents", []) if item.get("error") == 3]
         if errors:
-            return "SYS_ERR", f"TORRENT_ID_{errors[0].get('id')}", False
-        return "HEALTHY", f"PORT_{port} ACTIVE_{stats.get('activeTorrentCount', 0)}", False
+            self._report_torrent_errors(errors)
+        reason = f"PORT_{port} ACTIVE_{stats.get('activeTorrentCount', 0)}"
+        if errors:
+            reason += f" LOCAL_ERR_{len(errors)}"
+        return "HEALTHY", reason, False
+
+    def _report_torrent_errors(self, errors):
+        def clean(value, limit):
+            return " ".join(str(value or "").split())[:limit]
+
+        LOG.warning("TORRENT_LOCAL_ERRORS count=%s", len(errors))
+        for item in errors[:10]:
+            LOG.warning(
+                "TORRENT_LOCAL_ERROR id=%s hash=%s name=%s error=%s",
+                item.get("id"),
+                clean(item.get("hashString"), 40),
+                clean(item.get("name"), 80),
+                clean(item.get("errorString"), 120),
+            )
+        if len(errors) > 10:
+            LOG.warning("TORRENT_LOCAL_ERRORS truncated remaining=%s", len(errors) - 10)
 
     def run_forever(self):
         while True:

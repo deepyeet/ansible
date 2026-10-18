@@ -26,6 +26,7 @@ class Backend:
     peer = 45000
     actions = None
     fail_stop = False
+    torrents = []
 
     def __init__(self):
         self.actions = []
@@ -96,7 +97,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif method == "session-stats":
             result = {"activeTorrentCount": 1}
         elif method == "torrent-get":
-            result = {"torrents": []}
+            result = {"torrents": state.torrents}
         else:
             return self.reply(400, {})
         self.reply(200, {"result": "success", "arguments": result})
@@ -138,6 +139,33 @@ class HttpFlowTests(unittest.TestCase):
         record = json.loads((Path(self.temp.name) / "monitor.json").read_text())
         self.assertEqual((record["network_status"], record["external"], record["transmission_port"]),
                          ("HEALTHY", "open", 47000))
+
+    def test_torrent_local_error_is_logged_not_failed(self):
+        self.backend.forwarded = 45000
+        self.backend.torrents = [
+            {"id": 867, "hashString": "a" * 40, "name": "some-torrent",
+             "error": 3, "errorString": "No data found! Ensure your drives are connected"},
+            {"id": 868, "hashString": "b" * 40, "name": "tracker-error-torrent",
+             "error": 2, "errorString": "Tracker returned an error"},
+            {"id": 869, "hashString": "c" * 40, "name": "fine-torrent",
+             "error": 0, "errorString": ""},
+        ]
+        with self.assertLogs(MONITOR.LOG, level="INFO") as captured:
+            self.assertEqual(self.monitor.check(), "HEALTHY")
+        events = "\n".join(captured.output)
+        self.assertIn("TORRENT_LOCAL_ERRORS count=1", events)
+        self.assertIn("name=some-torrent", events)
+        self.assertIn("hash=" + "a" * 40, events)
+        self.assertIn("No data found!", events)
+        self.assertNotIn("tracker-error-torrent", events)
+        record = json.loads((Path(self.temp.name) / "monitor.json").read_text())
+        self.assertEqual(record["network_status"], "HEALTHY")
+        self.assertIn("LOCAL_ERR_1", record["reason"])
+        # Once the local error clears, the count disappears from the reason.
+        self.backend.torrents = self.backend.torrents[1:]
+        self.assertEqual(self.monitor.check(), "HEALTHY")
+        record = json.loads((Path(self.temp.name) / "monitor.json").read_text())
+        self.assertNotIn("LOCAL_ERR", record["reason"])
 
     def test_failed_stop_is_reported_and_cooled_down(self):
         self.backend.fail_stop = True
