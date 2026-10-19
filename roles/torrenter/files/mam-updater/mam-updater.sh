@@ -11,7 +11,13 @@ USER_AGENT="Mozilla/5.0 (Compatible; PrivateTrackerUpdater/2.0)"
 # Timers (Seconds) - Sourced from Env Vars with fallback to old defaults
 INTERVAL_NORMAL=${MAM_INTERVAL_NORMAL:-60}
 INTERVAL_ERROR=${MAM_INTERVAL_ERROR:-60}
-INTERVAL_RATELIMIT=${MAM_INTERVAL_RATELIMIT:-900} 
+INTERVAL_RATELIMIT=${MAM_INTERVAL_RATELIMIT:-900}
+
+# Public IP lookup retries - the providers share this container's VPN tunnel,
+# so one transient tunnel/DNS blip fails all of them at once. Retry within the
+# same check cycle and only report failure after every attempt has failed.
+IP_RETRY_ATTEMPTS=${MAM_IP_RETRY_ATTEMPTS:-5}
+IP_RETRY_DELAY=${MAM_IP_RETRY_DELAY:-10}
 
 # Logging Helper
 log() {
@@ -116,10 +122,24 @@ log "Service started. Monitoring IP changes..."
 while true; do
     hc_ping "/start" # Signal start of a new check cycle
     
-    # 1. Fetch IP
-    current_ip=$(get_public_ip)
+    # 1. Fetch IP (retry in-cycle; a single failed sweep is usually a
+    # transient VPN/DNS blip, not a real outage worth a /fail ping)
+    current_ip=""
+    for ((attempt=1; attempt<=IP_RETRY_ATTEMPTS; attempt++)); do
+        current_ip=$(get_public_ip)
+        if [ -n "$current_ip" ]; then
+            if [ "$attempt" -gt 1 ]; then
+                log "Public IP recovered on attempt $attempt/$IP_RETRY_ATTEMPTS: $current_ip"
+            fi
+            break
+        fi
+        if [ "$attempt" -lt "$IP_RETRY_ATTEMPTS" ]; then
+            log "WARN: Unable to determine public IP (attempt $attempt/$IP_RETRY_ATTEMPTS). Retrying in ${IP_RETRY_DELAY}s..."
+            sleep $IP_RETRY_DELAY
+        fi
+    done
     if [ -z "$current_ip" ]; then
-        log "WARN: Unable to determine public IP. Retrying in $INTERVAL_ERROR sec..."
+        log "WARN: Unable to determine public IP after $IP_RETRY_ATTEMPTS attempts. Retrying in $INTERVAL_ERROR sec..."
         hc_ping "/fail" "FAIL: Could not determine public IP."
         sleep $INTERVAL_ERROR
         continue

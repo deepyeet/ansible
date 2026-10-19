@@ -91,6 +91,8 @@ services:
       - MAM_INTERVAL_NORMAL=60
       - MAM_INTERVAL_ERROR=60
       - MAM_INTERVAL_RATELIMIT=900
+      - MAM_IP_RETRY_ATTEMPTS=5
+      - MAM_IP_RETRY_DELAY=10
       - TZ={{ timezone | default('America/Los_Angeles') }}
       - HC_URL=${HEALTHCHECK_HC_MAM_UPDATER}
     volumes:
