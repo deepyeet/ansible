@@ -12,11 +12,13 @@ SSH_KEY="{{ photo_ingest.ssh_key_path }}"
 
 # B31 file channel: this key is pinned on the phone to an rsync daemon
 # confined to the managed tree (no shell). All file ops ride it.
-# The root key above remains ONLY for the two exec calls marked B31-EXEC.
+# The root key above remains ONLY for the one exec call marked B31-EXEC.
 FILE_KEY="{{ photo_ingest.file_key_path }}"
 FILE_RSH="ssh -p {{ photo_ingest_endpoint.ssh_port }} -i $FILE_KEY"
 CANARY_FETCH="{{ photo_ingest.state_dir }}/.canary_fetch"
 EMPTY_SRC="{{ photo_ingest.state_dir }}/.empty_src"
+PROM_FETCH="{{ photo_ingest.state_dir }}/.promote_status_fetch"
+PROMOTER_MAX_AGE=720
 HC_URL="{{ photo_ingest_healthcheck_url }}"
 
 # SSH Command (-n protects loops)
@@ -103,16 +105,46 @@ if [ "$(ls -A "$DIR_INBOX")" ]; then
     find "$DIR_INBOX" -mindepth 2 -type d -empty -delete
 fi
 
+# --- PROMOTER LIVENESS (B31 part 2) ---
+# The on-phone promoter (busybox crond) rewrites .promote_status in the
+# tree root on every tick (2 min). Fetch it now: if it is missing or
+# older than PROMOTER_MAX_AGE, the cycle still does its work, but every
+# success ping below is replaced by a fail ping, so a dead promoter is
+# not silent. The phone being down is already caught by the canary.
+PROMOTER_STALE=0
+if rsync --timeout=30 --rsh="$FILE_RSH" "{{ photo_ingest_endpoint.ssh_user }}@$PIXEL_IP::pixel/.promote_status" "$PROM_FETCH" > /dev/null 2>&1; then
+    PROM_EPOCH=$(awk 'NR==1 {print $1}' "$PROM_FETCH")
+    case "$PROM_EPOCH" in
+        ''|*[!0-9]*) PROMOTER_STALE=1 ;;
+        *) [ $(( $(date +%s) - PROM_EPOCH )) -gt $PROMOTER_MAX_AGE ] && PROMOTER_STALE=1 ;;
+    esac
+else
+    PROMOTER_STALE=1
+fi
+[ "$PROMOTER_STALE" -eq 1 ] && echo "[WARN] Promoter status missing or stale - healthcheck will report failure."
+
+function final_ping {
+    if [ "$PROMOTER_STALE" -eq 1 ]; then
+        curl -fsS -m 10 --retry 3 "$HC_URL/fail" > /dev/null
+    else
+        curl -fsS -m 10 --retry 3 "$HC_URL" > /dev/null
+    fi
+}
+
 # --- STEP 2: PUSH (Queue -> Pixel Staging) ---
 if [ -z "$(ls -A "$DIR_QUEUE")" ] && [ -z "$(ls -A "$DIR_UPLOADING")" ]; then
     echo "Queue and Uploading empty. Sync complete."
-    curl -fsS -m 10 --retry 3 "$HC_URL" > /dev/null
+    final_ping
     exit 0
 fi
 
 if [ "$(ls -A "$DIR_QUEUE")" ]; then
     echo "Rsyncing to Staging..."
-    rsync -av --progress --partial-dir=.rsync-partial --timeout={{ photo_ingest.rsync_timeout }} \
+    # --omit-dir-times: the daemon (uid 2000) cannot set times on the
+    # root-owned .staging dir; without it rsync exits 23 and the cycle
+    # aborts before the state fetch (latent part-1 bug, found by the
+    # part-2 end-to-end probe, 2026-10-19).
+    rsync -av --progress --partial-dir=.rsync-partial --omit-dir-times --timeout={{ photo_ingest.rsync_timeout }} \
         --rsh="$FILE_RSH" \
         --delete-after \
         "$DIR_QUEUE"/ \
@@ -124,10 +156,10 @@ if [ "$(ls -A "$DIR_QUEUE")" ]; then
         exit 1
     fi
 
-    # --- STEP 3: ATOMIC PROMOTE (Staging -> Incoming) ---
-    echo "Promoting files to Incoming..."
-    # B31-EXEC (transitional): remote exec on the root key; retires with B31 part 2.
-    $SSH_CMD "find '$PIXEL_STAGING' -mindepth 1 -maxdepth 1 -type f -exec mv -f {} '$PIXEL_INCOMING/' \;"
+    # --- STEP 3: PROMOTE (Staging -> Incoming) ---
+    # B31 part 2: promotion is owned by the on-phone promoter
+    # (promote.sh under busybox crond, every 2 min). The manager only
+    # pushes; the state fetch in the NEXT cycle confirms receipt.
 fi
 
 # --- STEP 4 & 5: BATCH VERIFICATION ---
@@ -201,4 +233,4 @@ fi
 
 # --- MONITORING ---
 echo "Sync Cycle Complete."
-curl -fsS -m 10 --retry 3 "$HC_URL" > /dev/null
+final_ping

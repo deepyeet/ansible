@@ -1,0 +1,35 @@
+#!/system/bin/sh
+# B31 part 2: start busybox crond for the pixel-backup-gang
+# on-device jobs (the staging -> incoming promoter). Lives in
+# /data/adb/service.d so Magisk runs it at boot; also safe to
+# run by hand. Conventions follow farm-startup.sh: explicit
+# PATH, state in the gang dir, and a pidfile singleton --
+# pgrep -f is not used for the singleton because its pattern
+# matching can false-positive on an invoking shell's own
+# command line.
+export PATH=/sbin:/system/sbin:/system/bin:/system/xbin:$PATH
+
+GANG="/data/local/tmp/pixel-backup-gang"
+PIDFILE="$GANG/crond.pid"
+
+# Kill switch: creating this flag file keeps crond off.
+[ -f /data/ssh/no-pixel-jobs ] && exit 0
+
+# Singleton: a live pidfile whose process is crond means the
+# daemon is already up.
+if [ -f "$PIDFILE" ]; then
+    OLD=$(cat "$PIDFILE")
+    if [ -n "$OLD" ] && [ -d "/proc/$OLD" ] && \
+       tr '\0' ' ' < "/proc/$OLD/cmdline" 2>/dev/null | grep -q crond; then
+        exit 0
+    fi
+fi
+
+# Jobs inherit crond's environment. Android has no /bin/sh, so
+# SHELL must name the real shell, and PATH the toybox tools.
+# -f keeps crond in the foreground of this backgrounded launch
+# so $! is the daemon's real pid (no self-daemonize fork).
+SHELL=/system/bin/sh /data/adb/magisk/busybox crond -f \
+    -c "$GANG/crontabs" -L "$GANG/crond.log" -l 8 &
+echo $! > "$PIDFILE"
+exit 0

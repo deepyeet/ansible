@@ -1,0 +1,49 @@
+#!/system/bin/sh
+# B31 part 2: on-device promoter for the pixel photo pipeline.
+#
+# pixel_manager (NAS) pushes each batch into .staging and, since
+# part 2, no longer promotes it itself. crond runs this every 2
+# minutes to move completed files from .staging into incoming/,
+# where Google Photos picks them up.
+#
+# Safety on a bare timer, with no coordination with the NAS:
+# rsync exposes a file's real name in .staging only once the file
+# is complete (in-flight bytes live under dot-temp names), and
+# partial bytes from interrupted transfers are confined to
+# .staging/.rsync-partial/ (the manager pushes with
+# --partial-dir=.rsync-partial; the phone's rsync daemon also
+# refuses bare --partial). So a top-level, non-dot regular file
+# in .staging is always complete. This script moves exactly
+# those, and nothing else.
+#
+# Liveness: each tick that finds the drive mounted rewrites
+# .promote_status in the tree root (epoch + moved count).
+# pixel_manager reads it back over the file channel and fails
+# its healthcheck ping when the newest tick is too old.
+
+export PATH=/sbin:/system/sbin:/system/bin:/system/xbin:$PATH
+
+ROOT="/sdcard/the_binding"
+STAGING="$ROOT/.staging"
+INCOMING="$ROOT/incoming"
+STATUS="$ROOT/.promote_status"
+
+# Drive not mounted or tree not in place: do nothing, and write
+# no status -- the manager's canary check owns that failure mode.
+[ -f "$ROOT/.mount_check" ] || exit 0
+[ -d "$STAGING" ] && [ -d "$INCOMING" ] || exit 0
+
+LIST=$(find "$STAGING" -mindepth 1 -maxdepth 1 -type f ! -name '.*')
+if [ -n "$LIST" ]; then
+    find "$STAGING" -mindepth 1 -maxdepth 1 -type f ! -name '.*' \
+        -exec mv -f {} "$INCOMING/" \;
+    MOVED=$(printf '%s\n' "$LIST" | grep -c '^')
+else
+    MOVED=0
+fi
+
+# Atomic status rewrite (tmp + rename): a reader never sees a
+# torn line.
+echo "$(date +%s) moved=$MOVED" > "$STATUS.tmp"
+mv -f "$STATUS.tmp" "$STATUS"
+exit 0

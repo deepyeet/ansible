@@ -4,3 +4,6 @@ pixel_runtime_file_layout:
   my_drive_id.txt.j2: '{{ pixel_runtime_config.scripts_dir }}/my_drive_id.txt'
   pixel_health.sh.j2: '{{ pixel_runtime_config.scripts_dir }}/pixel_health.sh'
   reset_and_free.sh.j2: '{{ pixel_runtime_config.scripts_dir }}/reset_and_free.sh'
+  promote.sh.j2: '{{ pixel_runtime_config.scripts_dir }}/promote.sh'
+  crontab-root.j2: '{{ pixel_runtime_config.scripts_dir }}/crontabs/root'
+  pixel-jobs.sh.j2: /data/adb/service.d/pixel-jobs.sh

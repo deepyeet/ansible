@@ -21,6 +21,21 @@ photo_managed_files:
     uid: 0
     gid: 0
     mode: '755'
+  - dest: /data/local/tmp/pixel-backup-gang/promote.sh
+    template: promote.sh.j2
+    uid: 0
+    gid: 0
+    mode: '755'
+  - dest: /data/local/tmp/pixel-backup-gang/crontabs/root
+    template: crontab-root.j2
+    uid: 0
+    gid: 0
+    mode: '644'
+  - dest: /data/adb/service.d/pixel-jobs.sh
+    template: pixel-jobs.sh.j2
+    uid: 0
+    gid: 0
+    mode: '755'
   pixel_backup_gang:
   - dest: /data/local/tmp/pixel-backup-gang/disable_tcp_debugging.sh
     template: disable_tcp_debugging.sh.j2

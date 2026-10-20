@@ -1,0 +1,12 @@
+# B31 part 2: pixel-backup-gang on-device jobs (busybox crond).
+# Started by /data/adb/service.d/pixel-jobs.sh. A tick is a no-op
+# when .staging holds nothing complete; flock keeps ticks from
+# overlapping each other. NOTE: the lock uses busybox flock's
+# command form -- toybox flock (what /system/bin/flock is) takes
+# only an fd/path argument and has no run-a-command form.
+# Editing this file: busybox crond does not rescan on a bare
+# content edit -- restart crond afterwards (kill the pid in
+# crond.pid, then re-run /data/adb/service.d/pixel-jobs.sh).
+*/2 * * * * /data/adb/magisk/busybox flock -n /data/local/tmp/pixel-backup-gang/.promote.lock /system/bin/sh /data/local/tmp/pixel-backup-gang/promote.sh >> /data/local/tmp/pixel-backup-gang/promote.log 2>&1
+# Weekly: bound this subsystem's log growth.
+17 4 * * 0 tail -c 262144 /data/ssh/rsyncd-pixel.log > /data/ssh/.rsyncd-pixel.log.tmp && mv /data/ssh/.rsyncd-pixel.log.tmp /data/ssh/rsyncd-pixel.log; tail -c 65536 /data/local/tmp/pixel-backup-gang/promote.log > /data/local/tmp/pixel-backup-gang/.promote.log.tmp && mv /data/local/tmp/pixel-backup-gang/.promote.log.tmp /data/local/tmp/pixel-backup-gang/promote.log; tail -c 65536 /data/local/tmp/pixel-backup-gang/crond.log > /data/local/tmp/pixel-backup-gang/.crond.log.tmp && mv /data/local/tmp/pixel-backup-gang/.crond.log.tmp /data/local/tmp/pixel-backup-gang/crond.log
