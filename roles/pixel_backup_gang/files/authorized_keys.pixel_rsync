@@ -1,0 +1,1 @@
+command="/bin/rsync --server --daemon --config=/data/ssh/rsyncd-pixel.conf .",no-pty,no-agent-forwarding,no-port-forwarding,no-X11-forwarding ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILuLExjLMXIr/BgGrSAvlmEFs2dtS9LrgK095mIJgGLG pixel-rsync@ds223j

@@ -9,6 +9,14 @@ flock -n 200 || { echo "Script is already running. Aborting."; exit 1; }
 BASE_DIR="{{ photo_ingest.base_dir }}"
 PIXEL_IP="{{ photo_ingest_endpoint.address }}"
 SSH_KEY="{{ photo_ingest.ssh_key_path }}"
+
+# B31 file channel: this key is pinned on the phone to an rsync daemon
+# confined to the managed tree (no shell). All file ops ride it.
+# The root key above remains ONLY for the two exec calls marked B31-EXEC.
+FILE_KEY="{{ photo_ingest.file_key_path }}"
+FILE_RSH="ssh -p {{ photo_ingest_endpoint.ssh_port }} -i $FILE_KEY"
+CANARY_FETCH="{{ photo_ingest.state_dir }}/.canary_fetch"
+EMPTY_SRC="{{ photo_ingest.state_dir }}/.empty_src"
 HC_URL="{{ photo_ingest_healthcheck_url }}"
 
 # SSH Command (-n protects loops)
@@ -42,7 +50,8 @@ function handle_exit {
 trap handle_exit EXIT
 
 # --- SAFETY CHECK 1: PRE-FLIGHT CANARY ---
-if ! $SSH_CMD "[ -f '$CANARY_FILE' ]"; then
+# B31: canary existence is proven by fetching it over the file channel.
+if ! rsync --timeout=30 --rsh="$FILE_RSH" "{{ photo_ingest_endpoint.ssh_user }}@$PIXEL_IP::pixel/.mount_check" "$CANARY_FETCH" > /dev/null 2>&1; then
     echo "[CRITICAL] Mount Canary missing! Drive is NOT mounted."
     curl -fsS -m 10 --retry 3 "$HC_URL/fail" > /dev/null
     exit 1
@@ -104,10 +113,10 @@ fi
 if [ "$(ls -A "$DIR_QUEUE")" ]; then
     echo "Rsyncing to Staging..."
     rsync -avP --timeout={{ photo_ingest.rsync_timeout }} \
-        -e "ssh -p {{ photo_ingest_endpoint.ssh_port }} -i $SSH_KEY" \
+        --rsh="$FILE_RSH" \
         --delete-after \
         "$DIR_QUEUE"/ \
-        {{ photo_ingest_endpoint.ssh_user }}@$PIXEL_IP:"$PIXEL_STAGING"/
+        "{{ photo_ingest_endpoint.ssh_user }}@$PIXEL_IP::pixel/.staging/"
 
     if [ $? -ne 0 ]; then
         echo "[ERROR] Rsync failed. Aborting."
@@ -117,6 +126,7 @@ if [ "$(ls -A "$DIR_QUEUE")" ]; then
 
     # --- STEP 3: ATOMIC PROMOTE (Staging -> Incoming) ---
     echo "Promoting files to Incoming..."
+    # B31-EXEC (transitional): remote exec on the root key; retires with B31 part 2.
     $SSH_CMD "find '$PIXEL_STAGING' -mindepth 1 -maxdepth 1 -type f -exec mv -f {} '$PIXEL_INCOMING/' \;"
 fi
 
@@ -127,7 +137,12 @@ echo "Fetching Pixel State..."
 # 2. List Files
 # 3. Verify Canary (End)
 # If the drive drops at any point, the chain fails (Exit != 0), and we assume invalid state.
-$SSH_CMD "[ -f '$CANARY_FILE' ] && ls -1A '$PIXEL_INCOMING' && [ -f '$CANARY_FILE' ]" > "$TEMP_LIST"
+# B31: the canary/listing/canary triple check, as three file-channel round
+# trips. Any failure breaks the chain and aborts below, as before.
+mkdir -p "$EMPTY_SRC"
+rsync --timeout=30 --rsh="$FILE_RSH" "{{ photo_ingest_endpoint.ssh_user }}@$PIXEL_IP::pixel/.mount_check" "$CANARY_FETCH" > /dev/null 2>&1 && \
+rsync -rn --out-format='%n' --timeout=30 --rsh="$FILE_RSH" "{{ photo_ingest_endpoint.ssh_user }}@$PIXEL_IP::pixel/incoming/" "$EMPTY_SRC/" > "$TEMP_LIST" && \
+rsync --timeout=30 --rsh="$FILE_RSH" "{{ photo_ingest_endpoint.ssh_user }}@$PIXEL_IP::pixel/.mount_check" "$CANARY_FETCH" > /dev/null 2>&1
 
 if [ $? -ne 0 ]; then
     echo "[CRITICAL] State verification failed (Drive unstable or disconnected). Aborting."
@@ -172,6 +187,8 @@ if [ "$ELAPSED" -ge "$INTERVAL" ]; then
     echo "Interval reached ($((ELAPSED/60))m / $((INTERVAL/60))m). Garbage collecting..."
 
     # Run the maintenance
+    # B31-EXEC (transitional): remote exec on the root key; retires when the
+    # free-up trigger moves on-device (B31 part 2).
     $SSH_CMD "{{ photo_ingest_endpoint.cleanup_argv | join(' ') }}"
 
     if [ $? -eq 0 ]; then

@@ -5,6 +5,9 @@ photo_manager_user: muse
 photo_ingest:
   base_dir: /volume1/pixel
   ssh_key_path: /volume1/homes/{{ photo_manager_user }}/keys/id_ed25519
+  # B31: rsync-daemon-pinned file-channel key (public half lives on the phone
+  # as a forced-command authorized_keys entry; see pixel_backup_gang files).
+  file_key_path: /volume1/homes/{{ photo_manager_user }}/keys/id_ed25519_pixel_rsync
   ingest_age: 4
   ingest_min_date: '2020-01-01'
   rsync_timeout: 60
