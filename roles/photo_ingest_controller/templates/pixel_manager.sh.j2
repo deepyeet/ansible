@@ -112,7 +112,7 @@ fi
 
 if [ "$(ls -A "$DIR_QUEUE")" ]; then
     echo "Rsyncing to Staging..."
-    rsync -avP --timeout={{ photo_ingest.rsync_timeout }} \
+    rsync -av --progress --partial-dir=.rsync-partial --timeout={{ photo_ingest.rsync_timeout }} \
         --rsh="$FILE_RSH" \
         --delete-after \
         "$DIR_QUEUE"/ \
