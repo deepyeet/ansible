@@ -26,6 +26,11 @@ photo_managed_files:
     uid: 0
     gid: 0
     mode: '755'
+  - dest: /data/local/tmp/pixel-backup-gang/free_up.sh
+    template: free_up.sh.j2
+    uid: 0
+    gid: 0
+    mode: '755'
   - dest: /data/local/tmp/pixel-backup-gang/crontabs/root
     template: crontab-root.j2
     uid: 0

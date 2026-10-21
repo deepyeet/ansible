@@ -1,0 +1,120 @@
+#!/system/bin/sh
+# B31 part 3: on-device free-up wrapper for the pixel photo
+# pipeline.
+#
+# Until part 3, pixel_manager (NAS) triggered Photos' "Free up
+# space" by remote exec over a root SSH key every 8 hours. This
+# wrapper owns that job on the phone instead: crond runs it
+# every 10 minutes and it fires the automation only when ALL of
+# these hold:
+#   - the drive is mounted (.mount_check canary present);
+#   - at least 8h have passed since the last completed run
+#     (stamp file, epoch arithmetic - no timezone dependence);
+#   - incoming holds at least one media file (top-level regular
+#     file, no dotfiles, no Thumbs artifacts - the .trashed-*
+#     items are dotfiles and never make the gate pass alone).
+# The tick and the promote tick share one flock (.pipeline.lock
+# in the crontab), so the UI automation never overlaps a
+# promotion.
+#
+# Safety: free-up is provenance-based - Photos only deletes
+# local copies of items THIS device uploaded - and every item
+# in incoming also has a NAS twin in 2_Uploading. The worst a
+# spurious run can do is free nothing.
+#
+# reset_and_free.sh has no honest exit code (B18), so the
+# outcome is derived from the incoming media count before and
+# after the run, never from $?. The stamp advances on any
+# completed automation run, freed or not (the pre-part-3
+# manager stamped on invocation the same way).
+#
+# Hardening (2026-10-20): the media counts are validated numeric
+# before use -- an unreadable count can never trip the gate or
+# the arithmetic -- and the automation runs under a 300 s
+# timeout, so a wedged run can never hold the lock across
+# promoter ticks.
+#
+# Liveness: every tick that finds the drive mounted rewrites
+# .freeup_status in the tree root (epoch + decision).
+# pixel_manager reads it back over the file channel and fails
+# its healthcheck ping when the newest tick is too old. Each
+# run also appends one line to .freeup_log in the tree root.
+
+export PATH=/sbin:/system/sbin:/system/bin:/system/xbin:$PATH
+
+ROOT="/sdcard/the_binding"
+INCOMING="$ROOT/incoming"
+STATUS="$ROOT/.freeup_status"
+RUNLOG="$ROOT/.freeup_log"
+GANG="/data/local/tmp/pixel-backup-gang"
+STAMP="$GANG/.free_up_last"
+INTERVAL=28800
+RUN_TIMEOUT=300
+TIMEOUT_BIN="/data/adb/magisk/busybox"
+
+write_status() {
+    echo "$(date +%s) $1" > "$STATUS.tmp"
+    mv -f "$STATUS.tmp" "$STATUS"
+}
+
+# Prints a numeric count, or an empty string when the count could
+# not be established. Never fabricate a number.
+count_media() {
+    find "$INCOMING" -mindepth 1 -maxdepth 1 -type f \
+        ! -name '.*' ! -name 'Thumbs*.db' 2>/dev/null | wc -l | tr -d ' '
+}
+
+# Drive not mounted or tree not in place: do nothing, and write
+# no status -- the manager's canary check owns that failure mode.
+[ -f "$ROOT/.mount_check" ] || exit 0
+[ -d "$INCOMING" ] || exit 0
+
+NOW=$(date +%s)
+LAST=$(cat "$STAMP" 2>/dev/null || echo 0)
+case "$LAST" in ''|*[!0-9]*) LAST=0 ;; esac
+ELAPSED=$((NOW - LAST))
+if [ "$ELAPSED" -lt "$INTERVAL" ]; then
+    write_status "idle next_in=$((INTERVAL - ELAPSED))s"
+    exit 0
+fi
+
+BEFORE=$(count_media)
+case "$BEFORE" in ''|*[!0-9]*)
+    # The count could not be established (e.g. incoming vanished
+    # mid-tick). Never run the automation blind: skip, and do not
+    # stamp -- the next tick retries.
+    write_status "gated count-error"
+    exit 0
+    ;;
+esac
+if [ "$BEFORE" -eq 0 ]; then
+    # Due, but nothing to free. No stamp: the run fires as soon
+    # as content lands.
+    write_status "gated incoming-empty"
+    exit 0
+fi
+
+echo "free_up: running reset_and_free (before=$BEFORE)"
+"$TIMEOUT_BIN" timeout "$RUN_TIMEOUT" sh "$GANG/reset_and_free.sh"
+RC=$?
+case "$RC" in
+    124|143) TIMED_OUT=1 ;;   # timed out (GNU or busybox rc)
+    *) TIMED_OUT=0 ;;
+esac
+AFTER=$(count_media)
+case "$AFTER" in ''|*[!0-9]*) AFTER=$BEFORE ;; esac
+FREED=$((BEFORE - AFTER))
+[ "$FREED" -lt 0 ] && FREED=0
+echo "$NOW" > "$STAMP"
+if [ "$TIMED_OUT" -eq 1 ]; then
+    # A wedged run: the lock is already free again, so promoter
+    # ticks continue. Stamp anyway -- hammering a wedged Photos
+    # every 10 minutes is worse than waiting out the window.
+    write_status "ran timeout before=$BEFORE after=$AFTER freed=$FREED"
+    echo "$(date +%s) ran timeout before=$BEFORE after=$AFTER freed=$FREED rc=$RC" >> "$RUNLOG"
+    echo "free_up: reset_and_free timed out after ${RUN_TIMEOUT}s (rc=$RC)"
+else
+    write_status "ran before=$BEFORE after=$AFTER freed=$FREED"
+    echo "$(date +%s) ran before=$BEFORE after=$AFTER freed=$FREED" >> "$RUNLOG"
+fi
+exit 0

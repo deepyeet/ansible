@@ -8,21 +8,21 @@ flock -n 200 || { echo "Script is already running. Aborting."; exit 1; }
 # --- CONFIGURATION ---
 BASE_DIR="{{ photo_ingest.base_dir }}"
 PIXEL_IP="{{ photo_ingest_endpoint.address }}"
-SSH_KEY="{{ photo_ingest.ssh_key_path }}"
-
 # B31 file channel: this key is pinned on the phone to an rsync daemon
 # confined to the managed tree (no shell). All file ops ride it.
-# The root key above remains ONLY for the one exec call marked B31-EXEC.
+# B31 part 3: the old root SSH key is gone entirely -- the manager has
+# no exec channel to the phone. The triggers that used it (promote,
+# free-up) are on-device cron jobs now; the manager only watches
+# their status files (below).
 FILE_KEY="{{ photo_ingest.file_key_path }}"
 FILE_RSH="ssh -p {{ photo_ingest_endpoint.ssh_port }} -i $FILE_KEY"
 CANARY_FETCH="{{ photo_ingest.state_dir }}/.canary_fetch"
 EMPTY_SRC="{{ photo_ingest.state_dir }}/.empty_src"
 PROM_FETCH="{{ photo_ingest.state_dir }}/.promote_status_fetch"
 PROMOTER_MAX_AGE=720
+FREEUP_FETCH="{{ photo_ingest.state_dir }}/.freeup_status_fetch"
+FREEUP_MAX_AGE=1800
 HC_URL="{{ photo_ingest_healthcheck_url }}"
-
-# SSH Command (-n protects loops)
-SSH_CMD="ssh -p {{ photo_ingest_endpoint.ssh_port }} -i $SSH_KEY -n {{ photo_ingest_endpoint.ssh_user }}@$PIXEL_IP"
 
 # Pixel Paths
 PIXEL_ROOT="{{ photo_ingest_endpoint.root }}"
@@ -36,9 +36,6 @@ DIR_QUEUE="$BASE_DIR/1_Queue"
 DIR_UPLOADING="$BASE_DIR/2_Uploading"
 DIR_DONE="$BASE_DIR/3_Done"
 TEMP_LIST="{{ photo_ingest.state_dir }}/pixel_incoming_state.txt"
-
-STATE_FILE="{{ photo_ingest.state_dir }}/pixel_last_run.txt"
-INTERVAL={{ photo_ingest.cleanup_interval }}
 
 mkdir -p "$DIR_INBOX" "$DIR_QUEUE" "$DIR_UPLOADING" "$DIR_DONE"
 curl -fsS -m 10 --retry 3 "$HC_URL/start" > /dev/null
@@ -105,7 +102,7 @@ if [ "$(ls -A "$DIR_INBOX")" ]; then
     find "$DIR_INBOX" -mindepth 2 -type d -empty -delete
 fi
 
-# --- PROMOTER LIVENESS (B31 part 2) ---
+# --- ON-DEVICE JOB LIVENESS (B31 parts 2+3) ---
 # The on-phone promoter (busybox crond) rewrites .promote_status in the
 # tree root on every tick (2 min). Fetch it now: if it is missing or
 # older than PROMOTER_MAX_AGE, the cycle still does its work, but every
@@ -123,8 +120,24 @@ else
 fi
 [ "$PROMOTER_STALE" -eq 1 ] && echo "[WARN] Promoter status missing or stale - healthcheck will report failure."
 
+# Same watchdog for the free-up job (B31 part 3): its wrapper
+# rewrites .freeup_status on every tick (10 min). Crond death is
+# already caught by the promoter check; this one catches the
+# free-up job itself wedging or being removed.
+FREEUP_STALE=0
+if rsync --timeout=30 --rsh="$FILE_RSH" "{{ photo_ingest_endpoint.ssh_user }}@$PIXEL_IP::pixel/.freeup_status" "$FREEUP_FETCH" > /dev/null 2>&1; then
+    FREEUP_EPOCH=$(awk 'NR==1 {print $1}' "$FREEUP_FETCH")
+    case "$FREEUP_EPOCH" in
+        ''|*[!0-9]*) FREEUP_STALE=1 ;;
+        *) [ $(( $(date +%s) - FREEUP_EPOCH )) -gt $FREEUP_MAX_AGE ] && FREEUP_STALE=1 ;;
+    esac
+else
+    FREEUP_STALE=1
+fi
+[ "$FREEUP_STALE" -eq 1 ] && echo "[WARN] Free-up status missing or stale - healthcheck will report failure."
+
 function final_ping {
-    if [ "$PROMOTER_STALE" -eq 1 ]; then
+    if [ "$PROMOTER_STALE" -eq 1 ] || [ "$FREEUP_STALE" -eq 1 ]; then
         curl -fsS -m 10 --retry 3 "$HC_URL/fail" > /dev/null
     else
         curl -fsS -m 10 --retry 3 "$HC_URL" > /dev/null
@@ -210,26 +223,10 @@ done
 # Cleanup
 rm -f "$TEMP_LIST"
 
-# --- WAKE THE PUPPET ---
-NOW=$(date +%s)
-LAST_RUN=$(cat "$STATE_FILE" 2>/dev/null || echo 0)
-ELAPSED=$((NOW - LAST_RUN))
-
-if [ "$ELAPSED" -ge "$INTERVAL" ]; then
-    echo "Interval reached ($((ELAPSED/60))m / $((INTERVAL/60))m). Garbage collecting..."
-
-    # Run the maintenance
-    # B31-EXEC (transitional): remote exec on the root key; retires when the
-    # free-up trigger moves on-device (B31 part 2).
-    $SSH_CMD "{{ photo_ingest_endpoint.cleanup_argv | join(' ') }}"
-
-    if [ $? -eq 0 ]; then
-        echo "$NOW" > "$STATE_FILE"
-    fi
-else
-    REMAINING=$((INTERVAL - ELAPSED))
-    echo "Skipping space freeing. Next run in $((REMAINING / 60)) minutes."
-fi
+# --- FREE-UP ---
+# B31 part 3: free-up is an on-device cron job now (free_up.sh owns
+# the 8h stamp and the gates). The manager no longer triggers it;
+# it only watches .freeup_status (see the liveness block above).
 
 # --- MONITORING ---
 echo "Sync Cycle Complete."

@@ -1,8 +1,9 @@
 #!/system/bin/sh
 #
 # reset_and_free.sh - opens Google Photos' "Free up space" page via its
-# deep link and confirms the free-up. Invoked by pixel_manager.sh on the
-# NAS every cleanup_interval (8h) when the pipeline is active.
+# deep link and confirms the free-up. Invoked by free_up.sh, the
+# on-device cron wrapper (B31 part 3), every 8h when incoming
+# holds media that can be freed.
 #
 # Flow (current design, 2026-10-13): wake -> Home -> launch Photos ->
 # deep link to FreeUpSpaceActivity -> wait for the page -> confirm.

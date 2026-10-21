@@ -1,12 +1,19 @@
-# B31 part 2: pixel-backup-gang on-device jobs (busybox crond).
-# Started by /data/adb/service.d/pixel-jobs.sh. A tick is a no-op
-# when .staging holds nothing complete; flock keeps ticks from
-# overlapping each other. NOTE: the lock uses busybox flock's
-# command form -- toybox flock (what /system/bin/flock is) takes
-# only an fd/path argument and has no run-a-command form.
+# B31 part 2/3: pixel-backup-gang on-device jobs (busybox crond).
+# Started by /data/adb/service.d/pixel-jobs.sh. Both jobs share
+# one flock (.pipeline.lock): the free-up UI automation must
+# never overlap a promotion. flock is busybox's command form --
+# toybox flock (what /system/bin/flock is) takes only an fd/path
+# argument and has no run-a-command form. The free-up tick is
+# offset to odd minutes (1,11,21,...) so the two jobs never
+# launch in the same second and race for the lock -- at a shared
+# minute the loser of that race silently skips its tick.
 # Editing this file: busybox crond does not rescan on a bare
 # content edit -- restart crond afterwards (kill the pid in
 # crond.pid, then re-run /data/adb/service.d/pixel-jobs.sh).
-*/2 * * * * /data/adb/magisk/busybox flock -n /data/local/tmp/pixel-backup-gang/.promote.lock /system/bin/sh /data/local/tmp/pixel-backup-gang/promote.sh >> /data/local/tmp/pixel-backup-gang/promote.log 2>&1
-# Weekly: bound this subsystem's log growth.
-17 4 * * 0 tail -c 262144 /data/ssh/rsyncd-pixel.log > /data/ssh/.rsyncd-pixel.log.tmp && mv /data/ssh/.rsyncd-pixel.log.tmp /data/ssh/rsyncd-pixel.log; tail -c 65536 /data/local/tmp/pixel-backup-gang/promote.log > /data/local/tmp/pixel-backup-gang/.promote.log.tmp && mv /data/local/tmp/pixel-backup-gang/.promote.log.tmp /data/local/tmp/pixel-backup-gang/promote.log; tail -c 65536 /data/local/tmp/pixel-backup-gang/crond.log > /data/local/tmp/pixel-backup-gang/.crond.log.tmp && mv /data/local/tmp/pixel-backup-gang/.crond.log.tmp /data/local/tmp/pixel-backup-gang/crond.log
+*/2 * * * * /data/adb/magisk/busybox flock -n /data/local/tmp/pixel-backup-gang/.pipeline.lock /system/bin/sh /data/local/tmp/pixel-backup-gang/promote.sh >> /data/local/tmp/pixel-backup-gang/promote.log 2>&1
+1,11,21,31,41,51 * * * * /data/adb/magisk/busybox flock -n /data/local/tmp/pixel-backup-gang/.pipeline.lock /system/bin/sh /data/local/tmp/pixel-backup-gang/free_up.sh >> /data/local/tmp/pixel-backup-gang/free_up.log 2>&1
+# Weekly: bound this subsystem's log growth. crond.log is trimmed
+# in place (cat, not mv): crond holds its -L log open, and an mv
+# would strand that fd on an unlinked inode -- the visible file
+# would stop growing while the hidden one keeps eating disk.
+17 4 * * 0 tail -c 262144 /data/ssh/rsyncd-pixel.log > /data/ssh/.rsyncd-pixel.log.tmp && mv /data/ssh/.rsyncd-pixel.log.tmp /data/ssh/rsyncd-pixel.log; tail -c 65536 /data/local/tmp/pixel-backup-gang/promote.log > /data/local/tmp/pixel-backup-gang/.promote.log.tmp && mv /data/local/tmp/pixel-backup-gang/.promote.log.tmp /data/local/tmp/pixel-backup-gang/promote.log; tail -c 65536 /data/local/tmp/pixel-backup-gang/free_up.log > /data/local/tmp/pixel-backup-gang/.free_up.log.tmp && mv /data/local/tmp/pixel-backup-gang/.free_up.log.tmp /data/local/tmp/pixel-backup-gang/free_up.log; tail -c 65536 /data/local/tmp/pixel-backup-gang/crond.log > /data/local/tmp/pixel-backup-gang/.crond.log.tmp && cat /data/local/tmp/pixel-backup-gang/.crond.log.tmp > /data/local/tmp/pixel-backup-gang/crond.log; rm -f /data/local/tmp/pixel-backup-gang/.crond.log.tmp; tail -n 300 /sdcard/the_binding/.freeup_log > /sdcard/the_binding/.freeup_log.tmp && cat /sdcard/the_binding/.freeup_log.tmp > /sdcard/the_binding/.freeup_log; rm -f /sdcard/the_binding/.freeup_log.tmp
