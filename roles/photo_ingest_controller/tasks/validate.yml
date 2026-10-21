@@ -46,7 +46,6 @@
   loop:
     - '{{ photo_ingest.base_dir }}'
     - '{{ photo_ingest.state_dir }}'
-    - '{{ photo_ingest.ssh_key_path }}'
 
 - name: Validate queue timing inputs
   ansible.builtin.assert:
