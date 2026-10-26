@@ -67,6 +67,9 @@ Temporary Items
 
 .gemini/
 .vault_pass
+# Data does not live in this repo (album_sorter): the registry CSV is
+# library data and stays on the container only.
+album-registry-photos.csv
 # Investigation notes stay local to this checkout.
 /docs/
 __pycache__/

@@ -37,9 +37,10 @@ Under `files/tree/`, mirrored to `album_sorter_home`
 - `tests/` — the unit suite (`tests/run_tests.py`).
 - One deliberate gap: `reference/album-registry-photos.csv`, the
   runtime data file the package reads by default
-  (`Config.registry_csv`), is **not tracked yet** — see the excluded
-  list below. The copy already on the container stays in place,
-  unmanaged, and the sorter keeps reading it from there.
+  (`Config.registry_csv`), is **not tracked** — it is data, and data
+  does not live in this repo (see the excluded list below). The copy
+  on the container is the only copy; it stays in place, unmanaged,
+  and the sorter keeps reading it from there.
 - `requirements.txt` — the two real third-party dependencies
   (google-genai, pillow), pinned to the container's installed
   versions. The openai/anthropic SDKs that `providers.py` imports
@@ -75,12 +76,12 @@ live check run, 2026-10-26).
   calibration output), `fix_cha.py` (one-off data surgery for a
   single, already-applied album correction), and the retired
   implementation under `reference/`.
-- **The registry CSV** (`reference/album-registry-photos.csv`): it is
-  real library data — album names from the user's own photo library,
-  including the user's name in an album title — and is held out of
-  git until the user decides how it should be handled (redacted data
-  copy, or data kept out of the repo permanently). Until then the
-  repo is the source for the code, not for that one data file.
+- **The registry CSV** (`reference/album-registry-photos.csv`): real
+  library data — album names from the user's own photo library. Data
+  is not tracked in ansible, this file included; the repo root
+  `.gitignore` names it explicitly so a careless `git add` cannot
+  sweep it in. The repo is the source for the code and the
+  deployment shape, never for runtime or library data.
 
 ## Non-goals
 
