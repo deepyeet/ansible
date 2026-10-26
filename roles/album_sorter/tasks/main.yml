@@ -1,0 +1,40 @@
+---
+# tasks/main.yml for album_sorter
+#
+# Manages the sorter source tree and its virtualenv on the container.
+# This role never runs the sorter, schedules it, or touches its runtime
+# data: no *.sqlite3, no exp/ contents, no .env (the Gemini API key
+# lives only in the container's environment). See the role README.
+
+- name: Ensure the sorter working tree exists
+  ansible.builtin.file:
+    path: "{{ album_sorter_home }}"
+    state: directory
+
+- name: Ensure the experiment scratch directory exists (contents unmanaged)
+  ansible.builtin.file:
+    path: "{{ album_sorter_exp_dir }}"
+    state: directory
+
+- name: Deploy the sorter source tree
+  ansible.builtin.copy:
+    src: tree/
+    dest: "{{ album_sorter_home }}/"
+
+# The venv is managed with plain commands, not the pip module: the
+# module needs the `packaging` library importable by the target
+# interpreter, and neither the container's system python nor the venv
+# carries it. pip install -r is idempotent; "Successfully installed"
+# in its output is the change signal.
+- name: Ensure the sorter virtualenv exists
+  ansible.builtin.command:
+    cmd: "{{ album_sorter_python }} -m venv {{ album_sorter_venv }}"
+    creates: "{{ album_sorter_venv }}/bin/python"
+
+- name: Ensure the sorter virtualenv matches requirements.txt
+  ansible.builtin.command:
+    cmd: >-
+      {{ album_sorter_venv }}/bin/pip install
+      -r {{ album_sorter_home }}/requirements.txt
+  register: album_sorter_pip_result
+  changed_when: "'Successfully installed' in album_sorter_pip_result.stdout"

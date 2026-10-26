@@ -1,0 +1,13 @@
+---
+# Manage the album sorter source files and Python environment on the
+# ds223j-muse container. Source management only: this playbook never
+# runs the sorter — there is no scheduler, no manager integration and
+# no activation step. See roles/album_sorter/README.md.
+- name: Manage the album sorter installation
+  hosts: album_sorter
+  gather_facts: false
+  become: false
+  any_errors_fatal: true
+  roles:
+    - role: album_sorter
+      tags: [album_sorter]

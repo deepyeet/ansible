@@ -1,0 +1,10 @@
+# Album sorter deployment on the ds223j-muse container.
+# Two mounts: /home/muse is itself a mount (source
+# /volume1/@homes@[/muse], fstype ecryptfs, 7.0T volume; persists on
+# NAS storage) and holds the code — the sorter working tree and its
+# virtualenv below. Photo data lives on the other mount, /mnt/pixel
+# (bind of /dev/vg1/volume_1, the pixel share): the pipeline trees,
+# 4_Sorted and the .sorter-work* manifest dirs. Nothing on /mnt/pixel
+# is managed from this repo — see roles/album_sorter/README.md.
+album_sorter_home: /home/muse/album_sorter_dev
+album_sorter_venv: /home/muse/album-venv

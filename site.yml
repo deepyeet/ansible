@@ -36,3 +36,9 @@
   ansible.builtin.import_playbook: playbooks/pixel-tailscale.yml
   tags: [pixel_tailscale, tailscale]
 
+# Manage source files and the Python environment only; the sorter is
+# run manually on the container and is never scheduled from here.
+- name: Manage the album sorter installation
+  ansible.builtin.import_playbook: playbooks/album-sorter.yml
+  tags: [album_sorter]
+

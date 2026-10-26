@@ -16,6 +16,23 @@ all:
       ansible_host: 192.168.1.253
       ansible_user: '{{ secret_unix_name }}'
       ansible_python_interpreter: /usr/bin/python3
+    # The isolated Docker container on the DS223j NAS (a distinct SSH
+    # endpoint from the ds223j DSM host above): Tailscale SSH as user
+    # muse, through the tailnet tunnel proxy — mirrors the ds223j-muse
+    # stanza in ~/.ssh/config. The ProxyCommand helper reads the
+    # tunnel_proxy environment variable; export it the way
+    # ~/workspace/bin/nas-ssh does before running plays against it.
+    ds223j_muse:
+      ansible_host: 100.126.164.83
+      ansible_user: muse
+      ansible_python_interpreter: /usr/bin/python3
+      ansible_ssh_private_key_file: /home/hatch/.ssh/id_ed25519
+      ansible_ssh_common_args: >-
+        -o ProxyCommand="python3 /home/hatch/workspace/bin/tunnel-proxy-cmd.py %h %p"
+        -o StrictHostKeyChecking=accept-new
+        -o BatchMode=yes
+        -o ServerAliveInterval=30
+        -o ServerAliveCountMax=3
   children:
     monolith:
       hosts:
@@ -31,3 +48,6 @@ all:
         photo_controllers:
           hosts:
             ds223j: {}
+    album_sorter:
+      hosts:
+        ds223j_muse: {}

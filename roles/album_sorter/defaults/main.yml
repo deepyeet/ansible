@@ -1,0 +1,20 @@
+---
+# defaults/main.yml for album_sorter
+#
+# Deployment shape for the ds223j-muse container. host_vars for the
+# target host carry the same values explicitly; these defaults keep the
+# role usable standalone.
+
+# Working tree the sorter runs from on the container. Both paths are
+# on /home/muse, the ecryptfs homes mount; the photo data trees are
+# on /mnt/pixel and are not this role's concern.
+album_sorter_home: /home/muse/album_sorter_dev
+
+# Virtualenv the sorter runs under (system python3.12).
+album_sorter_venv: /home/muse/album-venv
+album_sorter_python: python3
+
+# Experiment scratch directory inside the working tree. The role only
+# ensures it exists; its contents are runtime data and are never
+# managed or copied from the repo.
+album_sorter_exp_dir: "{{ album_sorter_home }}/exp"

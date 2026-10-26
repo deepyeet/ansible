@@ -1,0 +1,15 @@
+# Album sorter runtime dependencies.
+#
+# Derived from the package's actual third-party imports, cross-checked
+# against ~/album-venv on the ds223j-muse container (pip list,
+# 2026-10-26); versions pin what is installed there.
+#   google-genai  album_sorter/gemini_client.py (from google.genai ...)
+#   pillow        album_sorter/{assets,metadata,windows}.py (PIL)
+# Everything else the code imports is the Python 3.12 standard library.
+#
+# Phase F (B37/B45): album_sorter/providers.py imports the openai and
+# anthropic SDKs lazily and runs without them. Neither is installed on
+# the container yet, so they are deliberately NOT listed here; add them
+# when the provider validation work is activated.
+google-genai==2.31.0
+pillow==12.3.0
